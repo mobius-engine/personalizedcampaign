@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block title %}Upload CSV - LinkedIn Leads Admin{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom: 30px;">📤 Upload CSV Files</h2>
+
+<div class="card">
+    <form method="POST" enctype="multipart/form-data" id="uploadForm">
+        <div class="upload-area" id="uploadArea">
+            <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#0077b5" stroke-width="2" style="margin-bottom: 20px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            <h3 style="margin-bottom: 10px;">Drop CSV files here or click to browse</h3>
+            <p style="color: #666; margin-bottom: 20px;">You can upload multiple files at once (bulk upload)</p>
+            <input type="file" name="files[]" id="fileInput" multiple accept=".csv" style="display: none;">
+            <button type="button" class="btn" onclick="document.getElementById('fileInput').click()">
+                Select Files
+            </button>
+        </div>
+
+        <div id="fileList" style="margin-top: 20px;"></div>
+
+        <div style="margin-top: 30px; text-align: center;">
+            <button type="submit" class="btn" id="uploadBtn" style="display: none;">
+                Upload Files
+            </button>
+        </div>
+    </form>
+</div>
+
+<div class="card" style="margin-top: 30px;">
+    <h3 style="margin-bottom: 15px;">ℹ️ CSV Format Requirements</h3>
+    <p style="margin-bottom: 10px;">Your CSV file should include these columns:</p>
+    <ul style="margin-left: 20px; line-height: 1.8;">
+        <li><strong>Profile URL</strong> (required) - LinkedIn profile URL</li>
+        <li>First Name</li>
+        <li>Last Name</li>
+        <li>Headline</li>
+        <li>Location</li>
+        <li>Current Title</li>
+        <li>Current Company</li>
+        <li>Email Address</li>
+        <li>Phone Number</li>
+        <li>Active Project</li>
+        <li>Notes</li>
+        <li>Feedback</li>
+    </ul>
+    <p style="margin-top: 15px; color: #666;">
+        <strong>Note:</strong> Duplicate records (same Profile URL) will be automatically updated with new data.
+        Deduplication runs automatically after each upload.
+    </p>
+</div>
+
+<script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, preventDefaults, false);
+        document.body.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    // Highlight drop area when dragging over it
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, () => {
+            uploadArea.classList.add('dragover');
+        }, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadArea.addEventListener(eventName, () => {
+            uploadArea.classList.remove('dragover');
+        }, false);
+    });
+    
+    // Handle dropped files
+    uploadArea.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        fileInput.files = files;
+        handleFiles(files);
+    }, false);
+    
+    // Handle selected files
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+    });
+    
+    function handleFiles(files) {
+        if (files.length === 0) return;
+        
+        fileList.innerHTML = '<h4 style="margin-bottom: 10px;">Selected Files:</h4>';
+        
+        Array.from(files).forEach(file => {
+            const fileItem = document.createElement('div');
+            fileItem.style.cssText = 'padding: 10px; background: #f8f9fa; border-radius: 4px; margin-bottom: 8px;';
+            fileItem.innerHTML = `
+                <strong>${file.name}</strong> 
+                <span style="color: #666;">(${(file.size / 1024).toFixed(2)} KB)</span>
+            `;
+            fileList.appendChild(fileItem);
+        });
+        
+        uploadBtn.style.display = 'inline-block';
+    }
+</script>
+{% endblock %}
+

@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+
+{% block title %}View Leads - LinkedIn Leads Admin{% endblock %}
+
+{% block content %}
+<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px;">
+    <h2>👥 All Leads ({{ total }})</h2>
+    <a href="/upload" class="btn">📤 Upload CSV</a>
+</div>
+
+<div class="card">
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Title</th>
+                    <th>Company</th>
+                    <th>Location</th>
+                    <th>Project</th>
+                    <th>Email</th>
+                    <th>Phone</th>
+                    <th>Profile</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for lead in leads %}
+                <tr>
+                    <td>
+                        <strong>{{ lead.first_name }} {{ lead.last_name }}</strong>
+                        {% if lead.headline %}
+                        <br><small style="color: #666;">{{ lead.headline[:60] }}{% if lead.headline|length > 60 %}...{% endif %}</small>
+                        {% endif %}
+                    </td>
+                    <td>{{ lead.current_title or '-' }}</td>
+                    <td>{{ lead.current_company or '-' }}</td>
+                    <td>{{ lead.location or '-' }}</td>
+                    <td>
+                        {% if lead.active_project %}
+                        <span class="badge badge-success">{{ lead.active_project }}</span>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if lead.email_address %}
+                        <a href="mailto:{{ lead.email_address }}" style="color: #0077b5;">{{ lead.email_address }}</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>{{ lead.phone_number or '-' }}</td>
+                    <td>
+                        {% if lead.profile_url %}
+                        <a href="{{ lead.profile_url }}" target="_blank" style="color: #0077b5;">View</a>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        {% if page > 1 %}
+        <a href="?page={{ page - 1 }}">← Previous</a>
+        {% endif %}
+        
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="active">{{ p }}</span>
+            {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <a href="?page={{ p }}">{{ p }}</a>
+            {% elif p == page - 3 or p == page + 3 %}
+            <span>...</span>
+            {% endif %}
+        {% endfor %}
+        
+        {% if page < total_pages %}
+        <a href="?page={{ page + 1 }}">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+

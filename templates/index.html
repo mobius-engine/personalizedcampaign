@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - LinkedIn Leads Admin{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom: 30px;">📊 Dashboard</h2>
+
+<div class="stats">
+    <div class="stat-card">
+        <h3>Total Leads</h3>
+        <div class="number">{{ total_leads }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Total Uploads</h3>
+        <div class="number">{{ total_uploads }}</div>
+    </div>
+    <div class="stat-card">
+        <h3>Unique Companies</h3>
+        <div class="number">{{ total_companies }}</div>
+    </div>
+</div>
+
+<div class="card">
+    <h3 style="margin-bottom: 20px;">📁 Recent Uploads</h3>
+    
+    {% if recent_uploads %}
+    <table>
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Date</th>
+                <th>Inserted</th>
+                <th>Updated</th>
+                <th>Failed</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for upload in recent_uploads %}
+            <tr>
+                <td>{{ upload.filename }}</td>
+                <td>{{ upload.upload_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ upload.rows_inserted }}</td>
+                <td>{{ upload.rows_updated }}</td>
+                <td>{{ upload.rows_failed }}</td>
+                <td>
+                    {% if upload.status == 'success' %}
+                        <span class="badge badge-success">Success</span>
+                    {% elif upload.status == 'partial' %}
+                        <span class="badge badge-warning">Partial</span>
+                    {% else %}
+                        <span class="badge badge-error">Failed</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p style="color: #999; text-align: center; padding: 40px;">No uploads yet. <a href="/upload">Upload your first CSV</a></p>
+    {% endif %}
+</div>
+
+<div style="text-align: center; margin-top: 40px;">
+    <a href="/upload" class="btn">📤 Upload New CSV</a>
+    <a href="/leads" class="btn btn-secondary" style="margin-left: 10px;">👥 View All Leads</a>
+</div>
+{% endblock %}
+

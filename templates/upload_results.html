@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Upload Results - LinkedIn Leads Admin{% endblock %}
+
+{% block content %}
+<h2 style="margin-bottom: 30px;">✅ Upload Results</h2>
+
+{% for result in results %}
+<div class="card">
+    <h3 style="margin-bottom: 20px;">
+        {% if result.success %}
+            ✅ {{ result.filename }}
+        {% else %}
+            ❌ {{ result.filename }}
+        {% endif %}
+    </h3>
+    
+    {% if result.success %}
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 20px;">
+            <div style="text-align: center; padding: 15px; background: #d4edda; border-radius: 6px;">
+                <div style="font-size: 24px; font-weight: bold; color: #155724;">{{ result.inserted }}</div>
+                <div style="color: #155724; font-size: 14px;">Inserted</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: #d1ecf1; border-radius: 6px;">
+                <div style="font-size: 24px; font-weight: bold; color: #0c5460;">{{ result.updated }}</div>
+                <div style="color: #0c5460; font-size: 14px;">Updated</div>
+            </div>
+            <div style="text-align: center; padding: 15px; background: #f8d7da; border-radius: 6px;">
+                <div style="font-size: 24px; font-weight: bold; color: #721c24;">{{ result.failed }}</div>
+                <div style="color: #721c24; font-size: 14px;">Failed</div>
+            </div>
+        </div>
+        
+        {% if result.dedupe %}
+        <div class="alert alert-info">
+            <strong>🔄 Deduplication:</strong> {{ result.dedupe }}
+        </div>
+        {% endif %}
+        
+        {% if result.errors %}
+        <div class="alert alert-error">
+            <strong>⚠️ Errors:</strong>
+            <ul style="margin-top: 10px; margin-left: 20px;">
+                {% for error in result.errors %}
+                <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+    {% else %}
+        <div class="alert alert-error">
+            <strong>Error:</strong> {{ result.error }}
+        </div>
+    {% endif %}
+</div>
+{% endfor %}
+
+<div style="text-align: center; margin-top: 30px;">
+    <a href="/upload" class="btn">Upload More Files</a>
+    <a href="/" class="btn btn-secondary" style="margin-left: 10px;">Back to Dashboard</a>
+    <a href="/leads" class="btn btn-secondary" style="margin-left: 10px;">View Leads</a>
+</div>
+{% endblock %}
+
