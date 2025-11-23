@@ -479,7 +479,10 @@ def generate_hook_worker(lead, api_key):
         if about:
             profile_summary += f". Background: {about}"
 
-        prompt = f"""Write a direct, simple hook (3-4 sentences) for this person. Use simple words.
+        # Build prompt based on available data
+        if about:
+            # Rich profile with background - hyperpersonalized
+            prompt = f"""Write a direct, simple hook (3-4 sentences) for this person. Use simple words.
 
 Profile: {profile_summary}
 
@@ -494,13 +497,24 @@ Structure:
    - Suggest natural evolution (strategy, leadership, advisory, architecture, etc.)
 4. CLOSE: "mobiusengine.ai has worked with many [their role] in the past 3 years to help them land their next role."
 
-Example for someone with "data visualization and business intelligence" background:
-"AI is now automating data visualization and BI reporting tasks, which is changing what companies want from data analysts. You have strong experience in business intelligence at Microsoft. Have you thought about repositioning to data strategy or analytics leadership roles? mobiusengine.ai has worked with many data analysts in the past 3 years to help them land their next role."
-
-Example for someone with "user research, A/B testing" background:
-"AI is now streamlining user research and A/B testing, which is changing what companies want from product managers. You have strong experience launching consumer products at Amazon. Have you thought about repositioning to product strategy or user experience leadership roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
+Example: "AI is now automating data visualization and BI reporting tasks, which is changing what companies want from data analysts. You have strong experience in business intelligence at Microsoft. Have you thought about repositioning to data strategy or analytics leadership roles? mobiusengine.ai has worked with many data analysts in the past 3 years to help them land their next role."
 
 Write the hook (under 60 words, use simple language, be HYPERPERSONALIZED to their actual background):"""
+        else:
+            # Minimal profile - use title/company only
+            prompt = f"""Write a direct, simple hook (3-4 sentences) for this person. Use simple words.
+
+Profile: {profile_summary}
+
+Structure:
+1. PROBLEM STATEMENT: "AI is now automating [common tasks for their role], which is changing what companies want from [their role]."
+2. ACKNOWLEDGE: "You have experience as a {title} at {company}."
+3. QUESTION: "Have you thought about repositioning to [natural evolution like strategy, leadership, architecture]?"
+4. CLOSE: "mobiusengine.ai has worked with many [their role] in the past 3 years to help them land their next role."
+
+Example for Mechanical Engineer: "AI is now automating CAD design and simulation tasks, which is changing what companies want from mechanical engineers. You have experience as a Mechanical Engineer at Amentum. Have you thought about repositioning to engineering leadership or systems architecture roles? mobiusengine.ai has worked with many mechanical engineers in the past 3 years to help them land their next role."
+
+Write the hook (under 60 words, use simple language):"""
 
         response = client.chat.completions.create(
             model="gpt-4.1",

@@ -46,10 +46,10 @@
                     <td>{{ lead.current_title or '-' }}</td>
                     <td>{{ lead.current_company or '-' }}</td>
                     <td>{{ lead.location or '-' }}</td>
-                    <td style="max-width: 300px;">
+                    <td style="max-width: 500px; min-width: 400px;">
                         <div id="hook-{{ lead.id }}">
                             {% if lead.hook %}
-                            <small style="color: #555;">{{ lead.hook[:100] }}{% if lead.hook|length > 100 %}...{% endif %}</small>
+                            <small style="color: #555; white-space: normal; word-wrap: break-word;">{{ lead.hook[:150] }}{% if lead.hook|length > 150 %}...{% endif %}</small>
                             {% else %}
                             <span style="color: #999;">No hook</span>
                             {% endif %}
@@ -121,8 +121,8 @@ function generateHook(leadId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            const preview = data.hook.length > 100 ? data.hook.substring(0, 100) + '...' : data.hook;
-            hookDiv.innerHTML = `<small style="color: #555;">${preview}</small>`;
+            const preview = data.hook.length > 150 ? data.hook.substring(0, 150) + '...' : data.hook;
+            hookDiv.innerHTML = `<small style="color: #555; white-space: normal; word-wrap: break-word;">${preview}</small>`;
             btn.textContent = '🔄 Regenerate';
             btn.disabled = false;
         } else {
