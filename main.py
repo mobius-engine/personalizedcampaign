@@ -479,20 +479,23 @@ def generate_hook_worker(lead, api_key):
         if about:
             profile_summary += f". Background: {about}"
 
-        prompt = f"""Based on this LinkedIn profile, write a plain, pithy hook (2-3 sentences max, under 40 words) that provides insight about where this person can position themselves next given how AI is transforming their industry and role.
+        prompt = f"""Write a conversational 2-sentence hook for this person. Use direct address ("you're", "your").
 
 Profile: {profile_summary}
 
-Requirements:
-- Be specific to their role/industry and how AI is changing it
-- Provide a concrete insight about future positioning
-- Use plain, direct language - no fluff
-- Don't ask questions or say "I can help"
-- Just state the insight
+SENTENCE 1 - Challenger insight:
+- Start with "If you're still..." or "Your [role]..." or "Most [role]..."
+- Challenge their current approach or thinking about job searching or their career
+- Make them question if they're falling behind or doing it the hard way
 
-Example style: "AI is automating routine data analysis. Senior analysts who can translate AI outputs into strategic recommendations are becoming the new decision architects."
+SENTENCE 2 - mobiusengine.ai value proposition:
+- MUST start with: "At mobiusengine.ai, we've worked with many [their role/background] and landed them roles without the frustration of online job applications"
+- Be specific about their role (e.g., "senior data analysts", "product managers", "marketing directors")
+- Keep the exact phrasing about "without the frustration of online job applications"
 
-Write the hook:"""
+Example: "If you're still sending hundreds of applications into the void, you're competing with thousands doing the same thing. At mobiusengine.ai, we've worked with many finance managers and landed them roles without the frustration of online job applications."
+
+Write ONLY the 2-sentence hook (under 50 words):"""
 
         response = client.chat.completions.create(
             model="gpt-4.1",
