@@ -446,39 +446,24 @@ def api_generate_hook(lead_id):
 
 @app.route('/api/generate-all-hooks', methods=['POST'])
 def api_generate_all_hooks():
-    """API endpoint to generate hooks for all leads without hooks."""
+    """API endpoint to generate hooks for all leads without hooks (async)."""
+    # Start background thread for hook generation
+    thread = threading.Thread(target=generate_hooks_background)
+    thread.daemon = True
+    thread.start()
+
+    # Return immediately
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-    # Get leads without hooks
-    cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
-    leads = cursor.fetchall()
-
-    total = len(leads)
-    success = 0
-    failed = 0
-
-    for lead in leads:
-        hook = generate_hook_for_lead(lead)
-        if hook:
-            cursor.execute("""
-                UPDATE leads
-                SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                WHERE id = %s
-            """, (hook, lead['id']))
-            conn.commit()
-            success += 1
-        else:
-            failed += 1
-
+    cursor.execute("SELECT COUNT(*) as count FROM leads WHERE hook IS NULL OR hook = ''")
+    count = cursor.fetchone()['count']
     cursor.close()
     conn.close()
 
     return jsonify({
         'success': True,
-        'total': total,
-        'generated': success,
-        'failed': failed
+        'message': f'Started background hook generation for {count} leads',
+        'total': count
     })
 
 
