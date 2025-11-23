@@ -391,7 +391,7 @@ Generate only the hook paragraph, nothing else."""
 
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-4.1-mini",
+            model="gpt-4.1",
             messages=[
                 {"role": "system", "content": "You are an expert at crafting compelling, concise professional outreach messages."},
                 {"role": "user", "content": prompt}
@@ -406,8 +406,58 @@ Generate only the hook paragraph, nothing else."""
         return None
 
 
+def generate_hook_worker(lead, api_key):
+    """Worker function to generate hook for a single lead."""
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
+
+    try:
+        # Build context from lead data
+        context_parts = []
+        if lead.get('name'):
+            context_parts.append(f"Name: {lead['name']}")
+        if lead.get('title'):
+            context_parts.append(f"Title: {lead['title']}")
+        if lead.get('company'):
+            context_parts.append(f"Company: {lead['company']}")
+        if lead.get('location'):
+            context_parts.append(f"Location: {lead['location']}")
+        if lead.get('about'):
+            context_parts.append(f"About: {lead['about'][:500]}")
+
+        context = "\n".join(context_parts)
+
+        prompt = f"""You are a career coach helping job seekers. Based on this LinkedIn profile, write a brief, personalized hook (2-3 sentences) that would resonate with this person about improving their job search.
+
+Profile:
+{context}
+
+Write a personalized hook that:
+1. References something specific from their profile
+2. Addresses a likely pain point in their job search
+3. Hints at how you can help
+
+Keep it conversational and under 50 words."""
+
+        response = client.chat.completions.create(
+            model="gpt-4.1",
+            messages=[
+                {"role": "system", "content": "You are a helpful career coach assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200
+        )
+
+        hook = response.choices[0].message.content.strip()
+        return {'id': lead['id'], 'hook': hook, 'success': True}
+    except Exception as e:
+        print(f"❌ Error generating hook for lead {lead['id']}: {e}")
+        return {'id': lead['id'], 'hook': None, 'success': False}
+
+
 def generate_hooks_background():
-    """Background task to generate hooks for leads without hooks."""
+    """Background task to generate hooks for leads without hooks using parallel processing."""
     global task_status
 
     try:
@@ -419,41 +469,69 @@ def generate_hooks_background():
         task_status['hook_generation']['current'] = 0
         task_status['hook_generation']['generated'] = 0
 
-        print("🚀 Starting background hook generation...")
+        print("🚀 Starting background hook generation with 30 parallel workers...")
+
+        # Get OpenAI API key
+        api_key = get_openai_api_key()
+        if not api_key:
+            print("❌ No OpenAI API key available")
+            task_status['hook_generation']['running'] = False
+            task_status['hook_generation']['message'] = 'Error: No API key'
+            return
+
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         # Get leads without hooks
         cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
         leads_without_hooks = cursor.fetchall()
+        cursor.close()
+        conn.close()
 
         total_leads = len(leads_without_hooks)
         task_status['hook_generation']['total'] = total_leads
-        task_status['hook_generation']['message'] = f'Found {total_leads} leads without hooks'
+        task_status['hook_generation']['message'] = f'Found {total_leads} leads - generating with 30 parallel workers...'
 
         print(f"📊 Found {total_leads} leads without hooks")
 
+        # Use ThreadPoolExecutor for parallel processing
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         hooks_generated = 0
-        for idx, lead in enumerate(leads_without_hooks, 1):
-            task_status['hook_generation']['current'] = idx
-            task_status['hook_generation']['progress'] = int((idx / total_leads) * 100)
-            task_status['hook_generation']['message'] = f'Generating hook {idx}/{total_leads}...'
 
-            print(f"⏳ Generating hook {idx}/{total_leads} for lead ID {lead['id']}...")
-            hook = generate_hook_for_lead(lead)
-            if hook:
-                cursor.execute("""
-                    UPDATE leads
-                    SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                    WHERE id = %s
-                """, (hook, lead['id']))
-                conn.commit()
-                hooks_generated += 1
-                task_status['hook_generation']['generated'] = hooks_generated
-                print(f"✅ Generated hook {hooks_generated}/{total_leads}")
+        with ThreadPoolExecutor(max_workers=30) as executor:
+            # Submit all tasks
+            future_to_lead = {executor.submit(generate_hook_worker, lead, api_key): lead for lead in leads_without_hooks}
 
-        cursor.close()
-        conn.close()
+            # Process results as they complete
+            completed = 0
+            for future in as_completed(future_to_lead):
+                completed += 1
+                result = future.result()
+
+                # Update status
+                task_status['hook_generation']['current'] = completed
+                task_status['hook_generation']['progress'] = int((completed / total_leads) * 100)
+
+                if result['success'] and result['hook']:
+                    # Update database in fresh connection
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute("""
+                        UPDATE leads
+                        SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = %s
+                    """, (result['hook'], result['id']))
+                    conn.commit()
+                    cursor.close()
+                    conn.close()
+
+                    hooks_generated += 1
+                    task_status['hook_generation']['generated'] = hooks_generated
+                    task_status['hook_generation']['message'] = f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
+                    print(f"✅ [{completed}/{total_leads}] Generated hook for lead {result['id']}")
+                else:
+                    task_status['hook_generation']['message'] = f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
+                    print(f"❌ [{completed}/{total_leads}] Failed to generate hook for lead {result['id']}")
 
         # Mark as complete
         task_status['hook_generation']['running'] = False
@@ -466,6 +544,8 @@ def generate_hooks_background():
         print(f"❌ Error in background hook generation: {e}")
         task_status['hook_generation']['running'] = False
         task_status['hook_generation']['message'] = f'Error: {str(e)}'
+        import traceback
+        traceback.print_exc()
 
 
 @app.route('/api/generate-hook/<int:lead_id>', methods=['POST'])
