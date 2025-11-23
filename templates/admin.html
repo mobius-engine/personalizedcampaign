@@ -320,14 +320,14 @@ function updateTaskUI(taskName, taskData) {
 
     // Update specific stats
     if (taskName === 'filtering') {
-        document.getElementById(`${prefix}-removed`).textContent = `${taskData.removed} removed`;
-        document.getElementById(`${prefix}-removed-stat`).textContent = taskData.removed;
+        document.getElementById(`${prefix}-removed`).textContent = `${taskData.stat_value} removed`;
+        document.getElementById(`${prefix}-removed-stat`).textContent = taskData.stat_value;
     } else if (taskName === 'hook') {
-        document.getElementById(`${prefix}-generated`).textContent = `${taskData.generated} generated`;
-        document.getElementById(`${prefix}-generated-stat`).textContent = taskData.generated;
+        document.getElementById(`${prefix}-generated`).textContent = `${taskData.stat_value} generated`;
+        document.getElementById(`${prefix}-generated-stat`).textContent = taskData.stat_value;
     } else if (taskName === 'dedup') {
-        document.getElementById(`${prefix}-duplicates`).textContent = `${taskData.duplicates} duplicates`;
-        document.getElementById(`${prefix}-duplicates-stat`).textContent = taskData.duplicates;
+        document.getElementById(`${prefix}-duplicates`).textContent = `${taskData.stat_value} duplicates`;
+        document.getElementById(`${prefix}-duplicates-stat`).textContent = taskData.stat_value;
     }
 
     // Update timestamp

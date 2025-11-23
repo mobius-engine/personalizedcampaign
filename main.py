@@ -20,40 +20,6 @@ import time
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Global status tracking for background tasks
-task_status = {
-    'filtering': {
-        'running': False,
-        'progress': 0,
-        'total': 0,
-        'current': 0,
-        'removed': 0,
-        'message': 'Not started',
-        'started_at': None,
-        'completed_at': None
-    },
-    'hook_generation': {
-        'running': False,
-        'progress': 0,
-        'total': 0,
-        'current': 0,
-        'generated': 0,
-        'message': 'Not started',
-        'started_at': None,
-        'completed_at': None
-    },
-    'deduplication': {
-        'running': False,
-        'progress': 0,
-        'total': 0,
-        'current': 0,
-        'duplicates': 0,
-        'message': 'Not started',
-        'started_at': None,
-        'completed_at': None
-    }
-}
-
 # Database configuration
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', '35.193.184.122'),
@@ -87,6 +53,91 @@ def allowed_file(filename):
 def get_db_connection():
     """Create database connection."""
     return psycopg2.connect(**DB_CONFIG)
+
+
+def init_task_status_table():
+    """Create task_status table if it doesn't exist."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS task_status (
+                task_name VARCHAR(50) PRIMARY KEY,
+                running BOOLEAN DEFAULT FALSE,
+                progress INTEGER DEFAULT 0,
+                total INTEGER DEFAULT 0,
+                current INTEGER DEFAULT 0,
+                stat_value INTEGER DEFAULT 0,
+                message TEXT DEFAULT 'Not started',
+                started_at TIMESTAMP,
+                completed_at TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Initialize default tasks
+        cursor.execute("""
+            INSERT INTO task_status (task_name) VALUES ('filtering'), ('hook_generation'), ('deduplication')
+            ON CONFLICT (task_name) DO NOTHING
+        """)
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error initializing task_status table: {e}")
+
+
+def get_task_status(task_name):
+    """Get status of a specific task from database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cursor.execute("SELECT * FROM task_status WHERE task_name = %s", (task_name,))
+        status = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if status:
+            return {
+                'running': status['running'],
+                'progress': status['progress'],
+                'total': status['total'],
+                'current': status['current'],
+                'stat_value': status['stat_value'],
+                'message': status['message'],
+                'started_at': status['started_at'].isoformat() if status['started_at'] else None,
+                'completed_at': status['completed_at'].isoformat() if status['completed_at'] else None
+            }
+        return None
+    except Exception as e:
+        print(f"Error getting task status: {e}")
+        return None
+
+
+def update_task_status(task_name, **kwargs):
+    """Update task status in database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Build update query dynamically
+        updates = []
+        values = []
+        for key, value in kwargs.items():
+            updates.append(f"{key} = %s")
+            values.append(value)
+
+        updates.append("updated_at = CURRENT_TIMESTAMP")
+        values.append(task_name)
+
+        query = f"UPDATE task_status SET {', '.join(updates)} WHERE task_name = %s"
+        cursor.execute(query, values)
+        conn.commit()
+        cursor.close()
+        conn.close()
+    except Exception as e:
+        print(f"Error updating task status: {e}")
 
 
 def normalize_column_name(name):
@@ -458,16 +509,16 @@ Keep it conversational and under 50 words."""
 
 def generate_hooks_background():
     """Background task to generate hooks for leads without hooks using parallel processing."""
-    global task_status
-
     try:
-        # Initialize status
-        task_status['hook_generation']['running'] = True
-        task_status['hook_generation']['started_at'] = datetime.now().isoformat()
-        task_status['hook_generation']['message'] = 'Starting hook generation...'
-        task_status['hook_generation']['progress'] = 0
-        task_status['hook_generation']['current'] = 0
-        task_status['hook_generation']['generated'] = 0
+        # Initialize status in database
+        update_task_status('hook_generation',
+            running=True,
+            started_at=datetime.now(),
+            message='Starting hook generation...',
+            progress=0,
+            current=0,
+            stat_value=0
+        )
 
         print("🚀 Starting background hook generation with 30 parallel workers...")
 
@@ -475,8 +526,7 @@ def generate_hooks_background():
         api_key = get_openai_api_key()
         if not api_key:
             print("❌ No OpenAI API key available")
-            task_status['hook_generation']['running'] = False
-            task_status['hook_generation']['message'] = 'Error: No API key'
+            update_task_status('hook_generation', running=False, message='Error: No API key')
             return
 
         conn = get_db_connection()
@@ -489,8 +539,10 @@ def generate_hooks_background():
         conn.close()
 
         total_leads = len(leads_without_hooks)
-        task_status['hook_generation']['total'] = total_leads
-        task_status['hook_generation']['message'] = f'Found {total_leads} leads - generating with 30 parallel workers...'
+        update_task_status('hook_generation',
+            total=total_leads,
+            message=f'Found {total_leads} leads - generating with 30 parallel workers...'
+        )
 
         print(f"📊 Found {total_leads} leads without hooks")
 
@@ -508,10 +560,6 @@ def generate_hooks_background():
                 completed += 1
                 result = future.result()
 
-                # Update status
-                task_status['hook_generation']['current'] = completed
-                task_status['hook_generation']['progress'] = int((completed / total_leads) * 100)
-
                 if result['success'] and result['hook']:
                     # Update database in fresh connection
                     conn = get_db_connection()
@@ -526,24 +574,31 @@ def generate_hooks_background():
                     conn.close()
 
                     hooks_generated += 1
-                    task_status['hook_generation']['generated'] = hooks_generated
-                    task_status['hook_generation']['message'] = f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
                     print(f"✅ [{completed}/{total_leads}] Generated hook for lead {result['id']}")
                 else:
-                    task_status['hook_generation']['message'] = f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
                     print(f"❌ [{completed}/{total_leads}] Failed to generate hook for lead {result['id']}")
 
+                # Update status in database every 10 completions
+                if completed % 10 == 0 or completed == total_leads:
+                    update_task_status('hook_generation',
+                        current=completed,
+                        progress=int((completed / total_leads) * 100),
+                        stat_value=hooks_generated,
+                        message=f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
+                    )
+
         # Mark as complete
-        task_status['hook_generation']['running'] = False
-        task_status['hook_generation']['progress'] = 100
-        task_status['hook_generation']['completed_at'] = datetime.now().isoformat()
-        task_status['hook_generation']['message'] = f'Complete! Generated {hooks_generated} hooks'
+        update_task_status('hook_generation',
+            running=False,
+            progress=100,
+            completed_at=datetime.now(),
+            message=f'Complete! Generated {hooks_generated} hooks'
+        )
 
         print(f"🎉 Background hook generation complete! Generated {hooks_generated} hooks.")
     except Exception as e:
         print(f"❌ Error in background hook generation: {e}")
-        task_status['hook_generation']['running'] = False
-        task_status['hook_generation']['message'] = f'Error: {str(e)}'
+        update_task_status('hook_generation', running=False, message=f'Error: {str(e)}')
         import traceback
         traceback.print_exc()
 
@@ -651,16 +706,16 @@ Respond with ONLY: KEEP or REMOVE"""
 
 def filter_independent_workers_background():
     """Background task to filter out independent/non-traditional workers using AI with parallel processing."""
-    global task_status
-
     try:
-        # Initialize status
-        task_status['filtering']['running'] = True
-        task_status['filtering']['started_at'] = datetime.now().isoformat()
-        task_status['filtering']['message'] = 'Starting filtering...'
-        task_status['filtering']['progress'] = 0
-        task_status['filtering']['current'] = 0
-        task_status['filtering']['removed'] = 0
+        # Initialize status in database
+        update_task_status('filtering',
+            running=True,
+            started_at=datetime.now(),
+            message='Starting filtering...',
+            progress=0,
+            current=0,
+            stat_value=0
+        )
 
         print("🚀 Starting independent worker filtering with parallel processing...")
 
@@ -668,8 +723,7 @@ def filter_independent_workers_background():
         api_key = get_openai_api_key()
         if not api_key:
             print("❌ No OpenAI API key available")
-            task_status['filtering']['running'] = False
-            task_status['filtering']['message'] = 'Error: No API key'
+            update_task_status('filtering', running=False, message='Error: No API key')
             return
 
         conn = get_db_connection()
@@ -682,8 +736,10 @@ def filter_independent_workers_background():
         conn.close()
 
         total_leads = len(all_leads)
-        task_status['filtering']['total'] = total_leads
-        task_status['filtering']['message'] = f'Analyzing {total_leads} leads with 10 parallel workers...'
+        update_task_status('filtering',
+            total=total_leads,
+            message=f'Analyzing {total_leads} leads with 10 parallel workers...'
+        )
 
         print(f"📊 Analyzing {total_leads} leads for employment type with 10 parallel workers...")
 
@@ -701,21 +757,23 @@ def filter_independent_workers_background():
                 completed += 1
                 result = future.result()
 
-                # Update status
-                task_status['filtering']['current'] = completed
-                task_status['filtering']['progress'] = int((completed / total_leads) * 100)
-
                 if result['decision'] == 'REMOVE':
                     leads_to_remove.append(result['id'])
-                    task_status['filtering']['removed'] = len(leads_to_remove)
-                    task_status['filtering']['message'] = f'Analyzed {completed}/{total_leads} - Removing {len(leads_to_remove)} leads'
                     print(f"   ❌ [{completed}/{total_leads}] REMOVE: {result['name']} - {result['title']} ({result['company']})")
                 else:
-                    task_status['filtering']['message'] = f'Analyzed {completed}/{total_leads} - Removing {len(leads_to_remove)} leads'
                     print(f"   ✅ [{completed}/{total_leads}] KEEP: {result['name']} - {result['title']} ({result['company']})")
 
+                # Update status in database every 10 completions
+                if completed % 10 == 0 or completed == total_leads:
+                    update_task_status('filtering',
+                        current=completed,
+                        progress=int((completed / total_leads) * 100),
+                        stat_value=len(leads_to_remove),
+                        message=f'Analyzed {completed}/{total_leads} - Removing {len(leads_to_remove)} leads'
+                    )
+
         # Delete leads in a fresh connection
-        task_status['filtering']['message'] = f'Deleting {len(leads_to_remove)} leads from database...'
+        update_task_status('filtering', message=f'Deleting {len(leads_to_remove)} leads from database...')
 
         if leads_to_remove:
             print(f"\n🗑️  Deleting {len(leads_to_remove)} independent/non-traditional workers...")
@@ -730,17 +788,18 @@ def filter_independent_workers_background():
             print("✅ No leads to remove")
 
         # Mark as complete
-        task_status['filtering']['running'] = False
-        task_status['filtering']['progress'] = 100
-        task_status['filtering']['completed_at'] = datetime.now().isoformat()
-        task_status['filtering']['message'] = f'Complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads'
+        update_task_status('filtering',
+            running=False,
+            progress=100,
+            completed_at=datetime.now(),
+            message=f'Complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads'
+        )
 
         print(f"🎉 Independent worker filtering complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads")
 
     except Exception as e:
         print(f"❌ Error in independent worker filtering: {e}")
-        task_status['filtering']['running'] = False
-        task_status['filtering']['message'] = f'Error: {str(e)}'
+        update_task_status('filtering', running=False, message=f'Error: {str(e)}')
         import traceback
         traceback.print_exc()
 
@@ -836,14 +895,25 @@ def admin_panel():
 
 @app.route('/api/task-status')
 def api_task_status():
-    """Get status of all background tasks."""
-    return jsonify(task_status)
+    """Get status of all background tasks from database."""
+    init_task_status_table()  # Ensure table exists
+
+    filtering = get_task_status('filtering')
+    hook_gen = get_task_status('hook_generation')
+    dedup = get_task_status('deduplication')
+
+    return jsonify({
+        'filtering': filtering or {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None},
+        'hook_generation': hook_gen or {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None},
+        'deduplication': dedup or {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None}
+    })
 
 
 @app.route('/api/start-deduplication', methods=['POST'])
 def api_start_deduplication():
     """Start deduplication process."""
-    if task_status['deduplication']['running']:
+    status = get_task_status('deduplication')
+    if status and status['running']:
         return jsonify({'error': 'Deduplication already running'}), 400
 
     thread = threading.Thread(target=run_deduplication_background)
@@ -858,22 +928,22 @@ def api_start_deduplication():
 
 def run_deduplication_background():
     """Background task to deduplicate leads."""
-    global task_status
-
     try:
-        # Initialize status
-        task_status['deduplication']['running'] = True
-        task_status['deduplication']['started_at'] = datetime.now().isoformat()
-        task_status['deduplication']['message'] = 'Starting deduplication...'
-        task_status['deduplication']['progress'] = 0
-        task_status['deduplication']['duplicates'] = 0
+        # Initialize status in database
+        update_task_status('deduplication',
+            running=True,
+            started_at=datetime.now(),
+            message='Starting deduplication...',
+            progress=0,
+            stat_value=0
+        )
 
         print("🚀 Starting deduplication...")
         conn = get_db_connection()
         cursor = conn.cursor()
 
         # Find duplicates by LinkedIn URL
-        task_status['deduplication']['message'] = 'Finding duplicates...'
+        update_task_status('deduplication', message='Finding duplicates...')
         cursor.execute("""
             SELECT linkedin_url, COUNT(*) as count, array_agg(id ORDER BY created_at) as ids
             FROM leads
@@ -884,8 +954,10 @@ def run_deduplication_background():
         duplicates = cursor.fetchall()
 
         total_groups = len(duplicates)
-        task_status['deduplication']['total'] = total_groups
-        task_status['deduplication']['message'] = f'Found {total_groups} duplicate groups'
+        update_task_status('deduplication',
+            total=total_groups,
+            message=f'Found {total_groups} duplicate groups'
+        )
 
         print(f"📊 Found {total_groups} duplicate groups")
 
@@ -897,28 +969,33 @@ def run_deduplication_background():
             conn.commit()
             total_removed += len(ids_to_delete)
 
-            task_status['deduplication']['current'] = idx
-            task_status['deduplication']['progress'] = int((idx / total_groups) * 100)
-            task_status['deduplication']['duplicates'] = total_removed
-            task_status['deduplication']['message'] = f'Processed {idx}/{total_groups} groups - Removed {total_removed} duplicates'
-
             print(f"✅ [{idx}/{total_groups}] Removed {len(ids_to_delete)} duplicates for {url}")
+
+            # Update status every 10 groups or at the end
+            if idx % 10 == 0 or idx == total_groups:
+                update_task_status('deduplication',
+                    current=idx,
+                    progress=int((idx / total_groups) * 100) if total_groups > 0 else 100,
+                    stat_value=total_removed,
+                    message=f'Processed {idx}/{total_groups} groups - Removed {total_removed} duplicates'
+                )
 
         cursor.close()
         conn.close()
 
         # Mark as complete
-        task_status['deduplication']['running'] = False
-        task_status['deduplication']['progress'] = 100
-        task_status['deduplication']['completed_at'] = datetime.now().isoformat()
-        task_status['deduplication']['message'] = f'Complete! Removed {total_removed} duplicate leads'
+        update_task_status('deduplication',
+            running=False,
+            progress=100,
+            completed_at=datetime.now(),
+            message=f'Complete! Removed {total_removed} duplicate leads'
+        )
 
         print(f"🎉 Deduplication complete! Removed {total_removed} duplicates")
 
     except Exception as e:
         print(f"❌ Error in deduplication: {e}")
-        task_status['deduplication']['running'] = False
-        task_status['deduplication']['message'] = f'Error: {str(e)}'
+        update_task_status('deduplication', running=False, message=f'Error: {str(e)}')
         import traceback
         traceback.print_exc()
 
