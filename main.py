@@ -483,17 +483,18 @@ def generate_hook_worker(lead, api_key):
 
 Profile: {profile_summary}
 
-SENTENCE 1 - Challenger insight:
-- Start with "If you're still..." or "Your [role]..." or "Most [role]..."
-- Challenge their current approach or thinking about job searching or their career
-- Make them question if they're falling behind or doing it the hard way
+SENTENCE 1 - Challenger insight about their FUNCTIONAL ROLE:
+- Challenge their current approach to their SPECIFIC job function (data analysis, product management, marketing, etc.)
+- Focus on how AI is changing their day-to-day work or making their current approach obsolete
+- Start with "If you're still..." or "Most [role]..." or "Your [specific task]..."
+- Make them question if their functional skills are falling behind
 
 SENTENCE 2 - mobiusengine.ai value proposition:
 - MUST start with: "At mobiusengine.ai, we've worked with many [their role/background] and landed them roles without the frustration of online job applications"
 - Be specific about their role (e.g., "senior data analysts", "product managers", "marketing directors")
 - Keep the exact phrasing about "without the frustration of online job applications"
 
-Example: "If you're still sending hundreds of applications into the void, you're competing with thousands doing the same thing. At mobiusengine.ai, we've worked with many finance managers and landed them roles without the frustration of online job applications."
+Example: "If you're still doing manual data analysis in Excel, AI is already doing it faster and better. At mobiusengine.ai, we've worked with many data analysts and landed them roles without the frustration of online job applications."
 
 Write ONLY the 2-sentence hook (under 50 words):"""
 
