@@ -24,7 +24,7 @@
             </thead>
             <tbody>
                 {% for lead in leads %}
-                <tr id="lead-row-{{ lead.id }}" {% if lead.viewed %}style="background-color: #ffe6e6;"{% endif %} data-viewed="{{ 'true' if lead.viewed else 'false' }}">
+                <tr id="lead-row-{{ lead.id }}" {% if lead.viewed %}style="background-color: #ffe6e6;"{% endif %} data-viewed="{{ 'true' if lead.viewed else 'false' }}" data-hook="{{ lead.hook|replace('"', '&quot;')|replace('\n', ' ') if lead.hook else '' }}">
                     <td>
                         <span id="status-{{ lead.id }}" style="font-size: 20px;">
                             {% if lead.viewed %}
@@ -57,8 +57,13 @@
                     </td>
                     <td>
                         <div style="display: flex; gap: 8px; flex-direction: column;">
+                            {% if lead.hook %}
+                            <button onclick="copyHookAndMarkViewed({{ lead.id }})" class="btn" style="padding: 6px 12px; font-size: 12px; background-color: #28a745;" id="copy-btn-{{ lead.id }}">
+                                📋 Copy Hook
+                            </button>
+                            {% endif %}
                             {% if lead.profile_url %}
-                            <a href="{{ lead.profile_url }}" target="_blank" class="btn" style="padding: 6px 12px; font-size: 12px; text-decoration: none;" onclick="markAsViewed({{ lead.id }}, event)">
+                            <a href="{{ lead.profile_url }}" target="_blank" class="btn" style="padding: 6px 12px; font-size: 12px; text-decoration: none;">
                                 👁️ View Profile
                             </a>
                             {% endif %}
@@ -134,7 +139,37 @@ function generateHook(leadId) {
     });
 }
 
-function markAsViewed(leadId, event) {
+function copyHookAndMarkViewed(leadId) {
+    const row = document.getElementById(`lead-row-${leadId}`);
+    const hook = row.getAttribute('data-hook');
+    const copyBtn = document.getElementById(`copy-btn-${leadId}`);
+
+    if (!hook) {
+        alert('No hook available to copy');
+        return;
+    }
+
+    // Copy to clipboard
+    navigator.clipboard.writeText(hook).then(() => {
+        // Show success feedback
+        const originalText = copyBtn.innerHTML;
+        copyBtn.innerHTML = '✅ Copied!';
+        copyBtn.style.backgroundColor = '#28a745';
+
+        // Mark as viewed
+        markAsViewed(leadId);
+
+        // Reset button after 2 seconds
+        setTimeout(() => {
+            copyBtn.innerHTML = originalText;
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy hook to clipboard');
+    });
+}
+
+function markAsViewed(leadId) {
     // Mark the lead as viewed
     fetch(`/api/mark-viewed/${leadId}`, {
         method: 'POST',
@@ -165,9 +200,6 @@ function markAsViewed(leadId, event) {
     .catch(error => {
         console.error('Error marking as viewed:', error);
     });
-
-    // Don't prevent the link from opening
-    return true;
 }
 </script>
 {% endblock %}
