@@ -479,24 +479,23 @@ def generate_hook_worker(lead, api_key):
         if about:
             profile_summary += f". Background: {about}"
 
-        prompt = f"""Write a conversational 2-sentence hook for this person. Use direct address ("you're", "your").
+        prompt = f"""Write a direct, simple hook (3-4 sentences) for this person. Use simple words.
 
 Profile: {profile_summary}
 
-SENTENCE 1 - Challenger insight about their FUNCTIONAL ROLE:
-- Challenge their current approach to their SPECIFIC job function (data analysis, product management, marketing, etc.)
-- Focus on how AI is changing their day-to-day work or making their current approach obsolete
-- Start with "If you're still..." or "Most [role]..." or "Your [specific task]..."
-- Make them question if their functional skills are falling behind
+Structure:
+1. SPECIFIC OBSERVATION: One concrete way their function is changing (name specific tasks/tools being replaced or changed)
+2. ACKNOWLEDGE: "You have experience in [specific thing they do]"
+3. QUESTION: "Have you thought about repositioning to [specific new role/focus]?"
+4. CLOSE: "mobiusengine.ai has worked with many [their role] in the past 3 years to help them land their next role."
 
-SENTENCE 2 - mobiusengine.ai value proposition:
-- MUST start with: "At mobiusengine.ai, we've worked with many [their role/background] and landed them roles without the frustration of online job applications"
-- Be specific about their role (e.g., "senior data analysts", "product managers", "marketing directors")
-- Keep the exact phrasing about "without the frustration of online job applications"
+Example for Product Manager:
+"AI now writes PRDs and runs A/B tests automatically. You have experience building products at Amazon. Have you thought about repositioning to AI product strategy roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
 
-Example: "If you're still doing manual data analysis in Excel, AI is already doing it faster and better. At mobiusengine.ai, we've worked with many data analysts and landed them roles without the frustration of online job applications."
+Example for Data Analyst:
+"AI pulls reports and builds dashboards in seconds now. You have experience analyzing data at Microsoft. Have you thought about repositioning to AI model interpretation roles? mobiusengine.ai has worked with many data analysts in the past 3 years to help them land their next role."
 
-Write ONLY the 2-sentence hook (under 50 words):"""
+Write the hook (under 50 words, use simple language):"""
 
         response = client.chat.completions.create(
             model="gpt-4.1",
