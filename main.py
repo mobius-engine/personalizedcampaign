@@ -444,10 +444,20 @@ def api_generate_hook(lead_id):
         return jsonify({'error': 'Failed to generate hook'}), 500
 
 
-def filter_leads_by_salary_background():
-    """Background task to filter leads by salary estimation."""
+def filter_independent_workers_background():
+    """Background task to filter out independent/non-traditional workers using AI."""
     try:
-        print("🚀 Starting salary-based lead filtering...")
+        print("🚀 Starting independent worker filtering...")
+
+        # Get OpenAI API key
+        api_key = get_openai_api_key()
+        if not api_key:
+            print("❌ No OpenAI API key available")
+            return
+
+        from openai import OpenAI
+        client = OpenAI(api_key=api_key)
+
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -456,71 +466,70 @@ def filter_leads_by_salary_background():
         all_leads = cursor.fetchall()
 
         total_leads = len(all_leads)
-        print(f"📊 Analyzing {total_leads} leads for salary filtering...")
+        print(f"📊 Analyzing {total_leads} leads for employment type...")
 
         leads_to_remove = []
 
         for idx, lead in enumerate(all_leads, 1):
-            title = (lead.get('current_title') or '').lower()
-            headline = (lead.get('headline') or '').lower()
+            name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+            title = lead.get('current_title', '') or ''
+            company = lead.get('current_company', '') or ''
+            headline = lead.get('headline', '') or ''
 
-            # Salary estimation logic based on title keywords
-            # High earners (likely $150K+)
-            high_earner_keywords = [
-                'chief', 'ceo', 'cto', 'cfo', 'coo', 'cio', 'cmo',
-                'president', 'vp', 'vice president', 'svp', 'evp',
-                'director', 'head of', 'partner',
-                'principal', 'senior director', 'managing director',
-                'senior vice president', 'executive',
-                'architect', 'senior architect', 'staff engineer',
-                'distinguished', 'fellow',
-            ]
+            # Use GPT-4o-mini for fast, cost-effective analysis
+            prompt = f"""Analyze this professional profile and determine if they are a TRADITIONAL CORPORATE EMPLOYEE who would actively apply to multiple jobs.
 
-            # Medium-high earners (likely $150K+ in tech/finance)
-            medium_high_keywords = [
-                'senior', 'sr.', 'sr ', 'lead',
-                'manager', 'product manager', 'engineering manager',
-                'data scientist', 'machine learning', 'ai engineer',
-                'software engineer', 'solutions architect',
-                'consultant', 'senior consultant',
-                'analyst', 'senior analyst',
-            ]
+Title: {title}
+Company: {company}
+Headline: {headline}
 
-            # Low earners (likely < $150K)
-            low_earner_keywords = [
-                'junior', 'jr.', 'jr ', 'entry level', 'entry-level',
-                'associate', 'assistant', 'coordinator',
-                'intern', 'trainee', 'apprentice',
-                'specialist', 'representative', 'agent',
-                'clerk', 'administrator', 'support',
-                'technician', 'operator',
-            ]
+REMOVE if they are:
+- Independent consultants, freelancers, contractors
+- Entrepreneurs, founders, business owners, CEOs of their own company
+- Self-employed professionals
+- "Helping companies..." or "Available for..." (consultant language)
+- Board members, advisors (unless that's secondary)
+- Retired or semi-retired
+- Very senior executives who likely won't apply to jobs (e.g., C-suite at large companies)
 
-            # Check if high earner
-            is_high_earner = any(keyword in title or keyword in headline for keyword in high_earner_keywords)
+KEEP if they are:
+- Traditional W-2 corporate employees (mid to senior level)
+- Directors, VPs, Managers at established companies
+- Engineers, analysts, specialists at companies
+- People in standard corporate roles who might need to job hunt
 
-            # Check if medium-high earner
-            is_medium_high = any(keyword in title or keyword in headline for keyword in medium_high_keywords)
+Respond with ONLY: KEEP or REMOVE"""
 
-            # Check if low earner
-            is_low_earner = any(keyword in title or keyword in headline for keyword in low_earner_keywords)
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": "You are an expert at identifying employment types. Respond only with KEEP or REMOVE."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=10
+                )
 
-            # Decision logic
-            if is_low_earner and not is_high_earner:
-                # Definitely low earner
-                leads_to_remove.append(lead['id'])
-                print(f"   ❌ [{idx}/{total_leads}] REMOVE: {lead.get('first_name')} {lead.get('last_name')} - {title}")
-            elif not is_high_earner and not is_medium_high:
-                # No clear indicators of high salary
-                leads_to_remove.append(lead['id'])
-                print(f"   ❌ [{idx}/{total_leads}] REMOVE: {lead.get('first_name')} {lead.get('last_name')} - {title}")
-            else:
-                # Keep high and medium-high earners
-                print(f"   ✅ [{idx}/{total_leads}] KEEP: {lead.get('first_name')} {lead.get('last_name')} - {title}")
+                decision = response.choices[0].message.content.strip().upper()
+
+                if "REMOVE" in decision:
+                    leads_to_remove.append(lead['id'])
+                    print(f"   ❌ [{idx}/{total_leads}] REMOVE: {name} - {title} ({company})")
+                else:
+                    print(f"   ✅ [{idx}/{total_leads}] KEEP: {name} - {title} ({company})")
+
+            except Exception as e:
+                print(f"   ⚠️  [{idx}/{total_leads}] ERROR analyzing {name}, keeping by default: {e}")
+
+            # Small delay every 20 leads to avoid rate limits
+            if idx % 20 == 0:
+                import time
+                time.sleep(1)
 
         # Delete leads
         if leads_to_remove:
-            print(f"\n🗑️  Deleting {len(leads_to_remove)} leads...")
+            print(f"\n🗑️  Deleting {len(leads_to_remove)} independent/non-traditional workers...")
             cursor.execute("DELETE FROM leads WHERE id = ANY(%s)", (leads_to_remove,))
             conn.commit()
             print(f"✅ Successfully deleted {len(leads_to_remove)} leads")
@@ -530,19 +539,19 @@ def filter_leads_by_salary_background():
         cursor.close()
         conn.close()
 
-        print(f"🎉 Salary filtering complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads")
+        print(f"🎉 Independent worker filtering complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads")
 
     except Exception as e:
-        print(f"❌ Error in salary filtering: {e}")
+        print(f"❌ Error in independent worker filtering: {e}")
         import traceback
         traceback.print_exc()
 
 
-@app.route('/api/filter-by-salary', methods=['POST'])
-def api_filter_by_salary():
-    """API endpoint to filter leads by salary (remove those likely < $150K)."""
+@app.route('/api/filter-independent-workers', methods=['POST'])
+def api_filter_independent_workers():
+    """API endpoint to filter out independent/non-traditional workers using AI."""
     # Start background thread for filtering
-    thread = threading.Thread(target=filter_leads_by_salary_background)
+    thread = threading.Thread(target=filter_independent_workers_background)
     thread.daemon = True
     thread.start()
 
@@ -556,7 +565,7 @@ def api_filter_by_salary():
 
     return jsonify({
         'success': True,
-        'message': f'Started background salary filtering for {count} leads',
+        'message': f'Started AI-powered filtering to remove independent workers from {count} leads',
         'total': count
     })
 
