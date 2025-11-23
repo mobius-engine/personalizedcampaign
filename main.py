@@ -519,7 +519,201 @@ def api_mark_viewed(lead_id):
         return jsonify({'error': 'Lead not found'}), 404
 
 
+@app.route('/analytics')
+def analytics():
+    """Analytics dashboard page."""
+    return render_template('analytics.html')
+
+
+@app.route('/api/analytics/summary')
+def analytics_summary():
+    """Get summary statistics for analytics dashboard."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Total leads
+        cursor.execute("SELECT COUNT(*) as total FROM leads")
+        total_leads = cursor.fetchone()['total']
+
+        # Contacted (viewed) leads
+        cursor.execute("SELECT COUNT(*) as contacted FROM leads WHERE viewed = TRUE")
+        contacted_leads = cursor.fetchone()['contacted']
+
+        # Uncontacted leads
+        uncontacted_leads = total_leads - contacted_leads
+
+        # Leads with hooks
+        cursor.execute("SELECT COUNT(*) as with_hooks FROM leads WHERE hook IS NOT NULL AND hook != ''")
+        leads_with_hooks = cursor.fetchone()['with_hooks']
+
+        # Leads without hooks
+        leads_without_hooks = total_leads - leads_with_hooks
+
+        # Contact rate
+        contact_rate = (contacted_leads / total_leads * 100) if total_leads > 0 else 0
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'total_leads': total_leads,
+            'contacted_leads': contacted_leads,
+            'uncontacted_leads': uncontacted_leads,
+            'leads_with_hooks': leads_with_hooks,
+            'leads_without_hooks': leads_without_hooks,
+            'contact_rate': round(contact_rate, 1)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analytics/by-company')
+def analytics_by_company():
+    """Get lead statistics by company."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                current_company,
+                COUNT(*) as total,
+                SUM(CASE WHEN viewed = TRUE THEN 1 ELSE 0 END) as contacted
+            FROM leads
+            WHERE current_company IS NOT NULL AND current_company != ''
+            GROUP BY current_company
+            ORDER BY total DESC
+            LIMIT 15
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify([dict(row) for row in results])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analytics/by-location')
+def analytics_by_location():
+    """Get lead statistics by location."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                location,
+                COUNT(*) as total,
+                SUM(CASE WHEN viewed = TRUE THEN 1 ELSE 0 END) as contacted
+            FROM leads
+            WHERE location IS NOT NULL AND location != ''
+            GROUP BY location
+            ORDER BY total DESC
+            LIMIT 15
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify([dict(row) for row in results])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analytics/by-title')
+def analytics_by_title():
+    """Get lead statistics by job title."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                current_title,
+                COUNT(*) as total,
+                SUM(CASE WHEN viewed = TRUE THEN 1 ELSE 0 END) as contacted
+            FROM leads
+            WHERE current_title IS NOT NULL AND current_title != ''
+            GROUP BY current_title
+            ORDER BY total DESC
+            LIMIT 15
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify([dict(row) for row in results])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analytics/contact-timeline')
+def analytics_contact_timeline():
+    """Get contact activity over time."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                DATE(viewed_at) as date,
+                COUNT(*) as contacts
+            FROM leads
+            WHERE viewed = TRUE AND viewed_at IS NOT NULL
+            GROUP BY DATE(viewed_at)
+            ORDER BY date DESC
+            LIMIT 30
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Convert date objects to strings
+        data = []
+        for row in results:
+            data.append({
+                'date': row['date'].isoformat() if row['date'] else None,
+                'contacts': row['contacts']
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/analytics/contact-status')
+def analytics_contact_status():
+    """Get contact status breakdown for pie chart."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                CASE
+                    WHEN viewed = TRUE THEN 'Contacted'
+                    ELSE 'Not Contacted'
+                END as status,
+                COUNT(*) as count
+            FROM leads
+            GROUP BY viewed
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify([dict(row) for row in results])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 8080))
     app.run(host='0.0.0.0', port=port, debug=True)
-
