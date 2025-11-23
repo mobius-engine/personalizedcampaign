@@ -356,7 +356,7 @@ Generate only the hook paragraph, nothing else."""
 
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "You are an expert at crafting compelling, concise professional outreach messages."},
                 {"role": "user", "content": prompt}
@@ -444,40 +444,18 @@ def api_generate_hook(lead_id):
         return jsonify({'error': 'Failed to generate hook'}), 500
 
 
-def filter_independent_workers_background():
-    """Background task to filter out independent/non-traditional workers using AI."""
-    try:
-        print("🚀 Starting independent worker filtering...")
+def analyze_lead_worker(lead, api_key):
+    """Worker function to analyze a single lead using AI."""
+    from openai import OpenAI
+    client = OpenAI(api_key=api_key)
 
-        # Get OpenAI API key
-        api_key = get_openai_api_key()
-        if not api_key:
-            print("❌ No OpenAI API key available")
-            return
+    name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+    title = lead.get('current_title', '') or ''
+    company = lead.get('current_company', '') or ''
+    headline = lead.get('headline', '') or ''
 
-        from openai import OpenAI
-        client = OpenAI(api_key=api_key)
-
-        conn = get_db_connection()
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-        # Get all leads
-        cursor.execute("SELECT * FROM leads ORDER BY id")
-        all_leads = cursor.fetchall()
-
-        total_leads = len(all_leads)
-        print(f"📊 Analyzing {total_leads} leads for employment type...")
-
-        leads_to_remove = []
-
-        for idx, lead in enumerate(all_leads, 1):
-            name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
-            title = lead.get('current_title', '') or ''
-            company = lead.get('current_company', '') or ''
-            headline = lead.get('headline', '') or ''
-
-            # Use GPT-4o-mini for fast, cost-effective analysis
-            prompt = f"""Analyze this professional profile and determine if they are a TRADITIONAL CORPORATE EMPLOYEE who would actively apply to multiple jobs.
+    # Use gpt-4.1-mini for fast, cost-effective analysis
+    prompt = f"""Analyze this professional profile and determine if they are a TRADITIONAL CORPORATE EMPLOYEE who would actively apply to multiple jobs.
 
 Title: {title}
 Company: {company}
@@ -500,44 +478,91 @@ KEEP if they are:
 
 Respond with ONLY: KEEP or REMOVE"""
 
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4o-mini",
-                    messages=[
-                        {"role": "system", "content": "You are an expert at identifying employment types. Respond only with KEEP or REMOVE."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.3,
-                    max_tokens=10
-                )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[
+                {"role": "system", "content": "You are an expert at identifying employment types. Respond only with KEEP or REMOVE."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=10
+        )
 
-                decision = response.choices[0].message.content.strip().upper()
+        decision = response.choices[0].message.content.strip().upper()
+        return {
+            'id': lead['id'],
+            'name': name,
+            'title': title,
+            'company': company,
+            'decision': 'REMOVE' if 'REMOVE' in decision else 'KEEP'
+        }
+    except Exception as e:
+        print(f"   ⚠️  ERROR analyzing {name}: {e}")
+        return {
+            'id': lead['id'],
+            'name': name,
+            'title': title,
+            'company': company,
+            'decision': 'KEEP'  # Keep by default on error
+        }
 
-                if "REMOVE" in decision:
-                    leads_to_remove.append(lead['id'])
-                    print(f"   ❌ [{idx}/{total_leads}] REMOVE: {name} - {title} ({company})")
+
+def filter_independent_workers_background():
+    """Background task to filter out independent/non-traditional workers using AI with parallel processing."""
+    try:
+        print("🚀 Starting independent worker filtering with parallel processing...")
+
+        # Get OpenAI API key
+        api_key = get_openai_api_key()
+        if not api_key:
+            print("❌ No OpenAI API key available")
+            return
+
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Get all leads
+        cursor.execute("SELECT * FROM leads ORDER BY id")
+        all_leads = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        total_leads = len(all_leads)
+        print(f"📊 Analyzing {total_leads} leads for employment type with 10 parallel workers...")
+
+        # Use ThreadPoolExecutor for parallel processing
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        leads_to_remove = []
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            # Submit all tasks
+            future_to_lead = {executor.submit(analyze_lead_worker, lead, api_key): lead for lead in all_leads}
+
+            # Process results as they complete
+            completed = 0
+            for future in as_completed(future_to_lead):
+                completed += 1
+                result = future.result()
+
+                if result['decision'] == 'REMOVE':
+                    leads_to_remove.append(result['id'])
+                    print(f"   ❌ [{completed}/{total_leads}] REMOVE: {result['name']} - {result['title']} ({result['company']})")
                 else:
-                    print(f"   ✅ [{idx}/{total_leads}] KEEP: {name} - {title} ({company})")
+                    print(f"   ✅ [{completed}/{total_leads}] KEEP: {result['name']} - {result['title']} ({result['company']})")
 
-            except Exception as e:
-                print(f"   ⚠️  [{idx}/{total_leads}] ERROR analyzing {name}, keeping by default: {e}")
-
-            # Small delay every 20 leads to avoid rate limits
-            if idx % 20 == 0:
-                import time
-                time.sleep(1)
-
-        # Delete leads
+        # Delete leads in a fresh connection
         if leads_to_remove:
             print(f"\n🗑️  Deleting {len(leads_to_remove)} independent/non-traditional workers...")
+            conn = get_db_connection()
+            cursor = conn.cursor()
             cursor.execute("DELETE FROM leads WHERE id = ANY(%s)", (leads_to_remove,))
             conn.commit()
+            cursor.close()
+            conn.close()
             print(f"✅ Successfully deleted {len(leads_to_remove)} leads")
         else:
             print("✅ No leads to remove")
-
-        cursor.close()
-        conn.close()
 
         print(f"🎉 Independent worker filtering complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads")
 
