@@ -458,57 +458,83 @@ Generate only the hook paragraph, nothing else."""
 
 
 def generate_hook_worker(lead, api_key):
-    """Worker function to generate hook for a single lead."""
+    """Worker function to generate AI-focused hook for a single lead."""
     from openai import OpenAI
     client = OpenAI(api_key=api_key)
 
     try:
-        # Build context from lead data
-        context_parts = []
-        if lead.get('name'):
-            context_parts.append(f"Name: {lead['name']}")
-        if lead.get('title'):
-            context_parts.append(f"Title: {lead['title']}")
-        if lead.get('company'):
-            context_parts.append(f"Company: {lead['company']}")
-        if lead.get('location'):
-            context_parts.append(f"Location: {lead['location']}")
-        if lead.get('about'):
-            context_parts.append(f"About: {lead['about'][:500]}")
+        # Extract lead data
+        name = lead.get('name', 'this person')
+        title = lead.get('title', 'professional')
+        company = lead.get('company', 'their company')
+        location = lead.get('location', '')
+        about = lead.get('about', '')[:500] if lead.get('about') else ''
 
-        context = "\n".join(context_parts)
+        # Build concise profile summary
+        profile_summary = f"{name} is a {title}"
+        if company:
+            profile_summary += f" at {company}"
+        if location:
+            profile_summary += f" in {location}"
+        if about:
+            profile_summary += f". Background: {about}"
 
-        prompt = f"""You are a career coach helping job seekers. Based on this LinkedIn profile, write a brief, personalized hook (2-3 sentences) that would resonate with this person about improving their job search.
+        prompt = f"""Based on this LinkedIn profile, write a plain, pithy hook (2-3 sentences max, under 40 words) that provides insight about where this person can position themselves next given how AI is transforming their industry and role.
 
-Profile:
-{context}
+Profile: {profile_summary}
 
-Write a personalized hook that:
-1. References something specific from their profile
-2. Addresses a likely pain point in their job search
-3. Hints at how you can help
+Requirements:
+- Be specific to their role/industry and how AI is changing it
+- Provide a concrete insight about future positioning
+- Use plain, direct language - no fluff
+- Don't ask questions or say "I can help"
+- Just state the insight
 
-Keep it conversational and under 50 words."""
+Example style: "AI is automating routine data analysis. Senior analysts who can translate AI outputs into strategic recommendations are becoming the new decision architects."
+
+Write the hook:"""
 
         response = client.chat.completions.create(
             model="gpt-4.1",
             messages=[
-                {"role": "system", "content": "You are a helpful career coach assistant."},
+                {"role": "system", "content": "You are a strategic career advisor focused on AI's impact on professional roles. Be direct and insightful."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
-            max_tokens=200
+            temperature=0.8,
+            max_tokens=150
         )
 
         hook = response.choices[0].message.content.strip()
-        return {'id': lead['id'], 'hook': hook, 'success': True}
+        # Remove quotes if AI wrapped the response
+        hook = hook.strip('"').strip("'")
+
+        return {
+            'id': lead['id'],
+            'name': name,
+            'title': title,
+            'company': company,
+            'linkedin_url': lead.get('linkedin_url', ''),
+            'hook': hook,
+            'success': True
+        }
     except Exception as e:
         print(f"❌ Error generating hook for lead {lead['id']}: {e}")
-        return {'id': lead['id'], 'hook': None, 'success': False}
+        return {
+            'id': lead['id'],
+            'name': lead.get('name', ''),
+            'title': lead.get('title', ''),
+            'company': lead.get('company', ''),
+            'linkedin_url': lead.get('linkedin_url', ''),
+            'hook': None,
+            'success': False
+        }
 
 
 def generate_hooks_background():
-    """Background task to generate hooks for leads without hooks using parallel processing."""
+    """Background task to generate hooks and save to CSV file."""
+    import csv
+    from datetime import datetime
+
     try:
         # Initialize status in database
         update_task_status('hook_generation',
@@ -532,27 +558,35 @@ def generate_hooks_background():
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
-        # Get leads without hooks
-        cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
-        leads_without_hooks = cursor.fetchall()
+        # Get ALL leads (not just those without hooks - regenerate all)
+        cursor.execute("SELECT * FROM leads ORDER BY id")
+        all_leads = cursor.fetchall()
         cursor.close()
         conn.close()
 
-        total_leads = len(leads_without_hooks)
+        total_leads = len(all_leads)
         update_task_status('hook_generation',
             total=total_leads,
-            message=f'Found {total_leads} leads - generating with 30 parallel workers...'
+            message=f'Found {total_leads} leads - generating AI-focused hooks with 30 parallel workers...'
         )
 
-        print(f"📊 Found {total_leads} leads without hooks")
+        print(f"📊 Generating AI-focused hooks for {total_leads} leads")
+
+        # Create CSV file with timestamp
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        csv_filename = f'generated_hooks_{timestamp}.csv'
+        csv_path = os.path.join('/tmp', csv_filename)
+
+        print(f"📝 Saving hooks to {csv_path}")
 
         # Use ThreadPoolExecutor for parallel processing
         from concurrent.futures import ThreadPoolExecutor, as_completed
         hooks_generated = 0
+        all_results = []
 
         with ThreadPoolExecutor(max_workers=30) as executor:
             # Submit all tasks
-            future_to_lead = {executor.submit(generate_hook_worker, lead, api_key): lead for lead in leads_without_hooks}
+            future_to_lead = {executor.submit(generate_hook_worker, lead, api_key): lead for lead in all_leads}
 
             # Process results as they complete
             completed = 0
@@ -561,20 +595,9 @@ def generate_hooks_background():
                 result = future.result()
 
                 if result['success'] and result['hook']:
-                    # Update database in fresh connection
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        UPDATE leads
-                        SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                        WHERE id = %s
-                    """, (result['hook'], result['id']))
-                    conn.commit()
-                    cursor.close()
-                    conn.close()
-
+                    all_results.append(result)
                     hooks_generated += 1
-                    print(f"✅ [{completed}/{total_leads}] Generated hook for lead {result['id']}")
+                    print(f"✅ [{completed}/{total_leads}] Generated hook for {result['name']}")
                 else:
                     print(f"❌ [{completed}/{total_leads}] Failed to generate hook for lead {result['id']}")
 
@@ -587,15 +610,31 @@ def generate_hooks_background():
                         message=f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
                     )
 
+        # Write all results to CSV
+        print(f"💾 Writing {len(all_results)} hooks to CSV...")
+        with open(csv_path, 'w', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['id', 'name', 'title', 'company', 'linkedin_url', 'hook']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for result in all_results:
+                writer.writerow({
+                    'id': result['id'],
+                    'name': result['name'],
+                    'title': result['title'],
+                    'company': result['company'],
+                    'linkedin_url': result['linkedin_url'],
+                    'hook': result['hook']
+                })
+
         # Mark as complete
         update_task_status('hook_generation',
             running=False,
             progress=100,
             completed_at=datetime.now(),
-            message=f'Complete! Generated {hooks_generated} hooks'
+            message=f'Complete! Generated {hooks_generated} hooks. Download: {csv_filename}'
         )
 
-        print(f"🎉 Background hook generation complete! Generated {hooks_generated} hooks.")
+        print(f"🎉 Hook generation complete! {hooks_generated} hooks saved to {csv_path}")
     except Exception as e:
         print(f"❌ Error in background hook generation: {e}")
         update_task_status('hook_generation', running=False, message=f'Error: {str(e)}')
@@ -829,7 +868,7 @@ def api_filter_independent_workers():
 
 @app.route('/api/generate-all-hooks', methods=['POST'])
 def api_generate_all_hooks():
-    """API endpoint to generate hooks for all leads without hooks (async)."""
+    """API endpoint to generate AI-focused hooks and save to CSV (async)."""
     # Start background thread for hook generation
     thread = threading.Thread(target=generate_hooks_background)
     thread.daemon = True
@@ -838,16 +877,97 @@ def api_generate_all_hooks():
     # Return immediately
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    cursor.execute("SELECT COUNT(*) as count FROM leads WHERE hook IS NULL OR hook = ''")
+    cursor.execute("SELECT COUNT(*) as count FROM leads")
     count = cursor.fetchone()['count']
     cursor.close()
     conn.close()
 
     return jsonify({
         'success': True,
-        'message': f'Started background hook generation for {count} leads',
+        'message': f'Generating AI-focused hooks for {count} leads - will save to CSV',
         'total': count
     })
+
+
+@app.route('/api/download-hooks/<filename>')
+def api_download_hooks(filename):
+    """Download generated hooks CSV file."""
+    from flask import send_file
+
+    # Security: only allow files matching the pattern
+    if not filename.startswith('generated_hooks_') or not filename.endswith('.csv'):
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    file_path = os.path.join('/tmp', filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    return send_file(file_path, as_attachment=True, download_name=filename)
+
+
+@app.route('/api/list-hook-files')
+def api_list_hook_files():
+    """List available hook CSV files."""
+    import glob
+
+    files = glob.glob('/tmp/generated_hooks_*.csv')
+    file_list = []
+    for f in files:
+        filename = os.path.basename(f)
+        size = os.path.getsize(f)
+        mtime = os.path.getmtime(f)
+        file_list.append({
+            'filename': filename,
+            'size': size,
+            'modified': datetime.fromtimestamp(mtime).isoformat()
+        })
+
+    # Sort by modified time, newest first
+    file_list.sort(key=lambda x: x['modified'], reverse=True)
+
+    return jsonify({'files': file_list})
+
+
+@app.route('/api/load-hooks-from-csv', methods=['POST'])
+def api_load_hooks_from_csv():
+    """Load hooks from CSV file into database."""
+    import csv
+
+    data = request.get_json()
+    filename = data.get('filename')
+
+    if not filename or not filename.startswith('generated_hooks_') or not filename.endswith('.csv'):
+        return jsonify({'error': 'Invalid filename'}), 400
+
+    file_path = os.path.join('/tmp', filename)
+    if not os.path.exists(file_path):
+        return jsonify({'error': 'File not found'}), 404
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        loaded = 0
+        with open(file_path, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                cursor.execute("""
+                    UPDATE leads
+                    SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (row['hook'], int(row['id'])))
+                loaded += 1
+
+        conn.commit()
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'success': True,
+            'message': f'Loaded {loaded} hooks into database'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/mark-viewed/<int:lead_id>', methods=['POST'])
