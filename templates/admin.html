@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Admin Panel - Task Management{% endblock %}
+
+{% block content %}
+<style>
+    .admin-container {
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+    }
+    
+    .task-card {
+        background: white;
+        border-radius: 8px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .task-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+    }
+    
+    .task-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #333;
+    }
+    
+    .task-status {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    
+    .status-running {
+        background: #e3f2fd;
+        color: #1976d2;
+    }
+    
+    .status-complete {
+        background: #e8f5e9;
+        color: #388e3c;
+    }
+    
+    .status-idle {
+        background: #f5f5f5;
+        color: #757575;
+    }
+    
+    .status-error {
+        background: #ffebee;
+        color: #d32f2f;
+    }
+    
+    .progress-container {
+        margin: 16px 0;
+    }
+    
+    .progress-bar-wrapper {
+        width: 100%;
+        height: 24px;
+        background: #f5f5f5;
+        border-radius: 12px;
+        overflow: hidden;
+        position: relative;
+    }
+    
+    .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #1976d2, #42a5f5);
+        transition: width 0.3s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    
+    .progress-info {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 8px;
+        font-size: 14px;
+        color: #666;
+    }
+    
+    .task-message {
+        margin: 12px 0;
+        padding: 12px;
+        background: #f9f9f9;
+        border-radius: 4px;
+        font-size: 14px;
+        color: #555;
+    }
+    
+    .task-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 12px;
+        margin: 16px 0;
+    }
+    
+    .stat-item {
+        padding: 12px;
+        background: #f5f5f5;
+        border-radius: 4px;
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #1976d2;
+    }
+    
+    .stat-label {
+        font-size: 12px;
+        color: #666;
+        text-transform: uppercase;
+        margin-top: 4px;
+    }
+    
+    .action-button {
+        padding: 10px 20px;
+        background: #1976d2;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.2s;
+    }
+    
+    .action-button:hover {
+        background: #1565c0;
+    }
+    
+    .action-button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+    }
+    
+    .timestamp {
+        font-size: 12px;
+        color: #999;
+        margin-top: 8px;
+    }
+</style>
+
+<div class="admin-container">
+    <h1 style="margin-bottom: 32px;">Admin Panel - Task Management</h1>
+    
+    <!-- Independent Worker Filtering -->
+    <div class="task-card" id="filtering-card">
+        <div class="task-header">
+            <div class="task-title">🔍 Independent Worker Filtering</div>
+            <span class="task-status status-idle" id="filtering-status">Idle</span>
+        </div>
+
+        <div class="task-message" id="filtering-message">Remove independent consultants, freelancers, and entrepreneurs. Keep traditional corporate employees.</div>
+
+        <div class="progress-container">
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="filtering-progress" style="width: 0%">0%</div>
+            </div>
+            <div class="progress-info">
+                <span id="filtering-current">0 / 0</span>
+                <span id="filtering-removed">0 removed</span>
+            </div>
+        </div>
+
+        <div class="task-stats">
+            <div class="stat-item">
+                <div class="stat-value" id="filtering-total">0</div>
+                <div class="stat-label">Total Leads</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="filtering-removed-stat">0</div>
+                <div class="stat-label">Removed</div>
+            </div>
+        </div>
+
+        <button class="action-button" id="filtering-button" onclick="startFiltering()">Start Filtering</button>
+        <div class="timestamp" id="filtering-timestamp"></div>
+    </div>
+
+    <!-- Hook Generation -->
+    <div class="task-card" id="hook-card">
+        <div class="task-header">
+            <div class="task-title">✨ AI Hook Generation</div>
+            <span class="task-status status-idle" id="hook-status">Idle</span>
+        </div>
+
+        <div class="task-message" id="hook-message">Generate personalized AI hooks for all leads using gpt-4.1-mini.</div>
+
+        <div class="progress-container">
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="hook-progress" style="width: 0%">0%</div>
+            </div>
+            <div class="progress-info">
+                <span id="hook-current">0 / 0</span>
+                <span id="hook-generated">0 generated</span>
+            </div>
+        </div>
+
+        <div class="task-stats">
+            <div class="stat-item">
+                <div class="stat-value" id="hook-total">0</div>
+                <div class="stat-label">Total Leads</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="hook-generated-stat">0</div>
+                <div class="stat-label">Generated</div>
+            </div>
+        </div>
+
+        <button class="action-button" id="hook-button" onclick="startHookGeneration()">Generate Hooks</button>
+        <div class="timestamp" id="hook-timestamp"></div>
+    </div>
+
+    <!-- Deduplication -->
+    <div class="task-card" id="dedup-card">
+        <div class="task-header">
+            <div class="task-title">🔄 Deduplication</div>
+            <span class="task-status status-idle" id="dedup-status">Idle</span>
+        </div>
+
+        <div class="task-message" id="dedup-message">Remove duplicate leads based on LinkedIn URL.</div>
+
+        <div class="progress-container">
+            <div class="progress-bar-wrapper">
+                <div class="progress-bar" id="dedup-progress" style="width: 0%">0%</div>
+            </div>
+            <div class="progress-info">
+                <span id="dedup-current">0 / 0</span>
+                <span id="dedup-duplicates">0 duplicates</span>
+            </div>
+        </div>
+
+        <div class="task-stats">
+            <div class="stat-item">
+                <div class="stat-value" id="dedup-total">0</div>
+                <div class="stat-label">Duplicate Groups</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="dedup-duplicates-stat">0</div>
+                <div class="stat-label">Removed</div>
+            </div>
+        </div>
+
+        <button class="action-button" id="dedup-button" onclick="startDeduplication()">Start Deduplication</button>
+        <div class="timestamp" id="dedup-timestamp"></div>
+    </div>
+</div>
+
+<script>
+// Update status every 2 seconds
+setInterval(updateStatus, 2000);
+updateStatus(); // Initial load
+
+function updateStatus() {
+    fetch('/api/task-status')
+        .then(response => response.json())
+        .then(data => {
+            updateTaskUI('filtering', data.filtering);
+            updateTaskUI('hook', data.hook_generation);
+            updateTaskUI('dedup', data.deduplication);
+        })
+        .catch(error => console.error('Error fetching status:', error));
+}
+
+function updateTaskUI(taskName, taskData) {
+    const statusMap = {
+        'filtering': 'filtering',
+        'hook': 'hook',
+        'dedup': 'dedup'
+    };
+
+    const prefix = statusMap[taskName];
+
+    // Update status badge
+    const statusEl = document.getElementById(`${prefix}-status`);
+    if (taskData.running) {
+        statusEl.textContent = 'Running';
+        statusEl.className = 'task-status status-running';
+    } else if (taskData.completed_at) {
+        statusEl.textContent = 'Complete';
+        statusEl.className = 'task-status status-complete';
+    } else if (taskData.message && taskData.message.includes('Error')) {
+        statusEl.textContent = 'Error';
+        statusEl.className = 'task-status status-error';
+    } else {
+        statusEl.textContent = 'Idle';
+        statusEl.className = 'task-status status-idle';
+    }
+
+    // Update progress bar
+    const progressBar = document.getElementById(`${prefix}-progress`);
+    progressBar.style.width = `${taskData.progress}%`;
+    progressBar.textContent = `${taskData.progress}%`;
+
+    // Update message
+    document.getElementById(`${prefix}-message`).textContent = taskData.message;
+
+    // Update current progress
+    document.getElementById(`${prefix}-current`).textContent = `${taskData.current} / ${taskData.total}`;
+
+    // Update total
+    document.getElementById(`${prefix}-total`).textContent = taskData.total;
+
+    // Update specific stats
+    if (taskName === 'filtering') {
+        document.getElementById(`${prefix}-removed`).textContent = `${taskData.removed} removed`;
+        document.getElementById(`${prefix}-removed-stat`).textContent = taskData.removed;
+    } else if (taskName === 'hook') {
+        document.getElementById(`${prefix}-generated`).textContent = `${taskData.generated} generated`;
+        document.getElementById(`${prefix}-generated-stat`).textContent = taskData.generated;
+    } else if (taskName === 'dedup') {
+        document.getElementById(`${prefix}-duplicates`).textContent = `${taskData.duplicates} duplicates`;
+        document.getElementById(`${prefix}-duplicates-stat`).textContent = taskData.duplicates;
+    }
+
+    // Update timestamp
+    const timestampEl = document.getElementById(`${prefix}-timestamp`);
+    if (taskData.started_at) {
+        const startTime = new Date(taskData.started_at).toLocaleString();
+        if (taskData.completed_at) {
+            const endTime = new Date(taskData.completed_at).toLocaleString();
+            timestampEl.textContent = `Started: ${startTime} | Completed: ${endTime}`;
+        } else {
+            timestampEl.textContent = `Started: ${startTime}`;
+        }
+    }
+
+    // Update button state
+    const button = document.getElementById(`${prefix}-button`);
+    button.disabled = taskData.running;
+}
+
+function startFiltering() {
+    if (confirm('Start filtering to remove independent workers? This will analyze all leads with AI.')) {
+        fetch('/api/filter-independent-workers', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                updateStatus();
+            })
+            .catch(error => alert('Error starting filtering: ' + error));
+    }
+}
+
+function startHookGeneration() {
+    if (confirm('Start generating AI hooks for all leads without hooks?')) {
+        fetch('/api/generate-all-hooks', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                updateStatus();
+            })
+            .catch(error => alert('Error starting hook generation: ' + error));
+    }
+}
+
+function startDeduplication() {
+    if (confirm('Start deduplication? This will remove duplicate leads based on LinkedIn URL.')) {
+        fetch('/api/start-deduplication', { method: 'POST' })
+            .then(response => response.json())
+            .then(data => {
+                alert(data.message);
+                updateStatus();
+            })
+            .catch(error => alert('Error starting deduplication: ' + error));
+    }
+}
+</script>
+
+{% endblock %}
+

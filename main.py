@@ -15,9 +15,44 @@ from werkzeug.utils import secure_filename
 from google.cloud import secretmanager
 from openai import OpenAI
 import threading
+import time
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
+
+# Global status tracking for background tasks
+task_status = {
+    'filtering': {
+        'running': False,
+        'progress': 0,
+        'total': 0,
+        'current': 0,
+        'removed': 0,
+        'message': 'Not started',
+        'started_at': None,
+        'completed_at': None
+    },
+    'hook_generation': {
+        'running': False,
+        'progress': 0,
+        'total': 0,
+        'current': 0,
+        'generated': 0,
+        'message': 'Not started',
+        'started_at': None,
+        'completed_at': None
+    },
+    'deduplication': {
+        'running': False,
+        'progress': 0,
+        'total': 0,
+        'current': 0,
+        'duplicates': 0,
+        'message': 'Not started',
+        'started_at': None,
+        'completed_at': None
+    }
+}
 
 # Database configuration
 DB_CONFIG = {
@@ -373,7 +408,17 @@ Generate only the hook paragraph, nothing else."""
 
 def generate_hooks_background():
     """Background task to generate hooks for leads without hooks."""
+    global task_status
+
     try:
+        # Initialize status
+        task_status['hook_generation']['running'] = True
+        task_status['hook_generation']['started_at'] = datetime.now().isoformat()
+        task_status['hook_generation']['message'] = 'Starting hook generation...'
+        task_status['hook_generation']['progress'] = 0
+        task_status['hook_generation']['current'] = 0
+        task_status['hook_generation']['generated'] = 0
+
         print("🚀 Starting background hook generation...")
         conn = get_db_connection()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -383,10 +428,17 @@ def generate_hooks_background():
         leads_without_hooks = cursor.fetchall()
 
         total_leads = len(leads_without_hooks)
+        task_status['hook_generation']['total'] = total_leads
+        task_status['hook_generation']['message'] = f'Found {total_leads} leads without hooks'
+
         print(f"📊 Found {total_leads} leads without hooks")
 
         hooks_generated = 0
         for idx, lead in enumerate(leads_without_hooks, 1):
+            task_status['hook_generation']['current'] = idx
+            task_status['hook_generation']['progress'] = int((idx / total_leads) * 100)
+            task_status['hook_generation']['message'] = f'Generating hook {idx}/{total_leads}...'
+
             print(f"⏳ Generating hook {idx}/{total_leads} for lead ID {lead['id']}...")
             hook = generate_hook_for_lead(lead)
             if hook:
@@ -397,14 +449,23 @@ def generate_hooks_background():
                 """, (hook, lead['id']))
                 conn.commit()
                 hooks_generated += 1
+                task_status['hook_generation']['generated'] = hooks_generated
                 print(f"✅ Generated hook {hooks_generated}/{total_leads}")
 
         cursor.close()
         conn.close()
 
+        # Mark as complete
+        task_status['hook_generation']['running'] = False
+        task_status['hook_generation']['progress'] = 100
+        task_status['hook_generation']['completed_at'] = datetime.now().isoformat()
+        task_status['hook_generation']['message'] = f'Complete! Generated {hooks_generated} hooks'
+
         print(f"🎉 Background hook generation complete! Generated {hooks_generated} hooks.")
     except Exception as e:
         print(f"❌ Error in background hook generation: {e}")
+        task_status['hook_generation']['running'] = False
+        task_status['hook_generation']['message'] = f'Error: {str(e)}'
 
 
 @app.route('/api/generate-hook/<int:lead_id>', methods=['POST'])
@@ -510,13 +571,25 @@ Respond with ONLY: KEEP or REMOVE"""
 
 def filter_independent_workers_background():
     """Background task to filter out independent/non-traditional workers using AI with parallel processing."""
+    global task_status
+
     try:
+        # Initialize status
+        task_status['filtering']['running'] = True
+        task_status['filtering']['started_at'] = datetime.now().isoformat()
+        task_status['filtering']['message'] = 'Starting filtering...'
+        task_status['filtering']['progress'] = 0
+        task_status['filtering']['current'] = 0
+        task_status['filtering']['removed'] = 0
+
         print("🚀 Starting independent worker filtering with parallel processing...")
 
         # Get OpenAI API key
         api_key = get_openai_api_key()
         if not api_key:
             print("❌ No OpenAI API key available")
+            task_status['filtering']['running'] = False
+            task_status['filtering']['message'] = 'Error: No API key'
             return
 
         conn = get_db_connection()
@@ -529,6 +602,9 @@ def filter_independent_workers_background():
         conn.close()
 
         total_leads = len(all_leads)
+        task_status['filtering']['total'] = total_leads
+        task_status['filtering']['message'] = f'Analyzing {total_leads} leads with 10 parallel workers...'
+
         print(f"📊 Analyzing {total_leads} leads for employment type with 10 parallel workers...")
 
         # Use ThreadPoolExecutor for parallel processing
@@ -545,13 +621,22 @@ def filter_independent_workers_background():
                 completed += 1
                 result = future.result()
 
+                # Update status
+                task_status['filtering']['current'] = completed
+                task_status['filtering']['progress'] = int((completed / total_leads) * 100)
+
                 if result['decision'] == 'REMOVE':
                     leads_to_remove.append(result['id'])
+                    task_status['filtering']['removed'] = len(leads_to_remove)
+                    task_status['filtering']['message'] = f'Analyzed {completed}/{total_leads} - Removing {len(leads_to_remove)} leads'
                     print(f"   ❌ [{completed}/{total_leads}] REMOVE: {result['name']} - {result['title']} ({result['company']})")
                 else:
+                    task_status['filtering']['message'] = f'Analyzed {completed}/{total_leads} - Removing {len(leads_to_remove)} leads'
                     print(f"   ✅ [{completed}/{total_leads}] KEEP: {result['name']} - {result['title']} ({result['company']})")
 
         # Delete leads in a fresh connection
+        task_status['filtering']['message'] = f'Deleting {len(leads_to_remove)} leads from database...'
+
         if leads_to_remove:
             print(f"\n🗑️  Deleting {len(leads_to_remove)} independent/non-traditional workers...")
             conn = get_db_connection()
@@ -564,10 +649,18 @@ def filter_independent_workers_background():
         else:
             print("✅ No leads to remove")
 
+        # Mark as complete
+        task_status['filtering']['running'] = False
+        task_status['filtering']['progress'] = 100
+        task_status['filtering']['completed_at'] = datetime.now().isoformat()
+        task_status['filtering']['message'] = f'Complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads'
+
         print(f"🎉 Independent worker filtering complete! Removed {len(leads_to_remove)} leads, kept {total_leads - len(leads_to_remove)} leads")
 
     except Exception as e:
         print(f"❌ Error in independent worker filtering: {e}")
+        task_status['filtering']['running'] = False
+        task_status['filtering']['message'] = f'Error: {str(e)}'
         import traceback
         traceback.print_exc()
 
@@ -653,6 +746,101 @@ def api_mark_viewed(lead_id):
         })
     else:
         return jsonify({'error': 'Lead not found'}), 404
+
+
+@app.route('/admin')
+def admin_panel():
+    """Admin panel with task management."""
+    return render_template('admin.html')
+
+
+@app.route('/api/task-status')
+def api_task_status():
+    """Get status of all background tasks."""
+    return jsonify(task_status)
+
+
+@app.route('/api/start-deduplication', methods=['POST'])
+def api_start_deduplication():
+    """Start deduplication process."""
+    if task_status['deduplication']['running']:
+        return jsonify({'error': 'Deduplication already running'}), 400
+
+    thread = threading.Thread(target=run_deduplication_background)
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({
+        'success': True,
+        'message': 'Deduplication started'
+    })
+
+
+def run_deduplication_background():
+    """Background task to deduplicate leads."""
+    global task_status
+
+    try:
+        # Initialize status
+        task_status['deduplication']['running'] = True
+        task_status['deduplication']['started_at'] = datetime.now().isoformat()
+        task_status['deduplication']['message'] = 'Starting deduplication...'
+        task_status['deduplication']['progress'] = 0
+        task_status['deduplication']['duplicates'] = 0
+
+        print("🚀 Starting deduplication...")
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        # Find duplicates by LinkedIn URL
+        task_status['deduplication']['message'] = 'Finding duplicates...'
+        cursor.execute("""
+            SELECT linkedin_url, COUNT(*) as count, array_agg(id ORDER BY created_at) as ids
+            FROM leads
+            WHERE linkedin_url IS NOT NULL AND linkedin_url != ''
+            GROUP BY linkedin_url
+            HAVING COUNT(*) > 1
+        """)
+        duplicates = cursor.fetchall()
+
+        total_groups = len(duplicates)
+        task_status['deduplication']['total'] = total_groups
+        task_status['deduplication']['message'] = f'Found {total_groups} duplicate groups'
+
+        print(f"📊 Found {total_groups} duplicate groups")
+
+        total_removed = 0
+        for idx, (url, count, ids) in enumerate(duplicates, 1):
+            # Keep first, delete rest
+            ids_to_delete = ids[1:]
+            cursor.execute("DELETE FROM leads WHERE id = ANY(%s)", (ids_to_delete,))
+            conn.commit()
+            total_removed += len(ids_to_delete)
+
+            task_status['deduplication']['current'] = idx
+            task_status['deduplication']['progress'] = int((idx / total_groups) * 100)
+            task_status['deduplication']['duplicates'] = total_removed
+            task_status['deduplication']['message'] = f'Processed {idx}/{total_groups} groups - Removed {total_removed} duplicates'
+
+            print(f"✅ [{idx}/{total_groups}] Removed {len(ids_to_delete)} duplicates for {url}")
+
+        cursor.close()
+        conn.close()
+
+        # Mark as complete
+        task_status['deduplication']['running'] = False
+        task_status['deduplication']['progress'] = 100
+        task_status['deduplication']['completed_at'] = datetime.now().isoformat()
+        task_status['deduplication']['message'] = f'Complete! Removed {total_removed} duplicate leads'
+
+        print(f"🎉 Deduplication complete! Removed {total_removed} duplicates")
+
+    except Exception as e:
+        print(f"❌ Error in deduplication: {e}")
+        task_status['deduplication']['running'] = False
+        task_status['deduplication']['message'] = f'Error: {str(e)}'
+        import traceback
+        traceback.print_exc()
 
 
 @app.route('/analytics')
