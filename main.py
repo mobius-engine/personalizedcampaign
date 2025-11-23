@@ -484,22 +484,23 @@ def generate_hook_worker(lead, api_key):
 Profile: {profile_summary}
 
 Structure:
-1. PROBLEM STATEMENT: "AI is now [automating specific tasks], which is changing what [hiring managers/companies] are looking for in [their role]."
-   - Name specific tasks AI is doing
-   - Show the impact/pain point for job seekers
-2. ACKNOWLEDGE: "You have experience in [specific thing they do at their company]"
+1. HYPERPERSONALIZED PROBLEM STATEMENT: Use their ACTUAL experience/background from the profile to make this laser-focused.
+   - Reference specific domain knowledge, tools, or expertise from their background
+   - Then show how AI is automating those specific tasks
+   - End with: "which is changing what [hiring managers/companies] are looking for in [their role]"
+2. ACKNOWLEDGE: "You have experience in [specific thing from their background]"
 3. QUESTION: "Have you thought about repositioning to [specific new role/focus]?"
    - BE SUBTLE - don't always say "AI-driven" or "AI-focused"
    - Suggest natural evolution (strategy, leadership, advisory, architecture, etc.)
 4. CLOSE: "mobiusengine.ai has worked with many [their role] in the past 3 years to help them land their next role."
 
-Example for HR Manager:
-"AI is now automating many HR tasks like screening resumes and scheduling interviews, which is changing what hiring managers are looking for in HR leaders. You have experience managing people and processes at Meta. Have you thought about repositioning to workforce strategy or organizational design roles? mobiusengine.ai has worked with many HR managers in the past 3 years to help them land their next role."
+Example for someone with "data visualization and business intelligence" background:
+"AI is now automating data visualization and BI reporting tasks, which is changing what companies want from data analysts. You have strong experience in business intelligence at Microsoft. Have you thought about repositioning to data strategy or analytics leadership roles? mobiusengine.ai has worked with many data analysts in the past 3 years to help them land their next role."
 
-Example for Product Manager:
-"AI now writes PRDs and runs A/B tests automatically, which is changing what companies want from product managers. You have experience building products at Amazon. Have you thought about repositioning to product strategy or platform architecture roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
+Example for someone with "user research, A/B testing" background:
+"AI is now streamlining user research and A/B testing, which is changing what companies want from product managers. You have strong experience launching consumer products at Amazon. Have you thought about repositioning to product strategy or user experience leadership roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
 
-Write the hook (under 60 words, use simple language):"""
+Write the hook (under 60 words, use simple language, be HYPERPERSONALIZED to their actual background):"""
 
         response = client.chat.completions.create(
             model="gpt-4.1",
