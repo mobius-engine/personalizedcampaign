@@ -489,13 +489,15 @@ Structure:
    - Show the impact/pain point for job seekers
 2. ACKNOWLEDGE: "You have experience in [specific thing they do at their company]"
 3. QUESTION: "Have you thought about repositioning to [specific new role/focus]?"
+   - BE SUBTLE - don't always say "AI-driven" or "AI-focused"
+   - Suggest natural evolution (strategy, leadership, advisory, architecture, etc.)
 4. CLOSE: "mobiusengine.ai has worked with many [their role] in the past 3 years to help them land their next role."
 
 Example for HR Manager:
-"AI is now automating many HR tasks like screening resumes and scheduling interviews, which is changing what hiring managers are looking for in HR leaders. You have experience managing people and processes at Meta. Have you thought about repositioning to HR tech strategy roles? mobiusengine.ai has worked with many HR managers in the past 3 years to help them land their next role."
+"AI is now automating many HR tasks like screening resumes and scheduling interviews, which is changing what hiring managers are looking for in HR leaders. You have experience managing people and processes at Meta. Have you thought about repositioning to workforce strategy or organizational design roles? mobiusengine.ai has worked with many HR managers in the past 3 years to help them land their next role."
 
 Example for Product Manager:
-"AI now writes PRDs and runs A/B tests automatically, which is changing what companies want from product managers. You have experience building products at Amazon. Have you thought about repositioning to AI product strategy roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
+"AI now writes PRDs and runs A/B tests automatically, which is changing what companies want from product managers. You have experience building products at Amazon. Have you thought about repositioning to product strategy or platform architecture roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
 
 Write the hook (under 60 words, use simple language):"""
 
