@@ -902,10 +902,22 @@ def api_task_status():
     hook_gen = get_task_status('hook_generation')
     dedup = get_task_status('deduplication')
 
+    # Add legacy field names for backward compatibility
+    default_status = {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None}
+
+    filtering_status = filtering or default_status.copy()
+    hook_status = hook_gen or default_status.copy()
+    dedup_status = dedup or default_status.copy()
+
+    # Add legacy field names
+    filtering_status['removed'] = filtering_status.get('stat_value', 0)
+    hook_status['generated'] = hook_status.get('stat_value', 0)
+    dedup_status['duplicates'] = dedup_status.get('stat_value', 0)
+
     return jsonify({
-        'filtering': filtering or {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None},
-        'hook_generation': hook_gen or {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None},
-        'deduplication': dedup or {'running': False, 'progress': 0, 'total': 0, 'current': 0, 'stat_value': 0, 'message': 'Not started', 'started_at': None, 'completed_at': None}
+        'filtering': filtering_status,
+        'hook_generation': hook_status,
+        'deduplication': dedup_status
     })
 
 
