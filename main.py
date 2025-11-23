@@ -184,6 +184,20 @@ def index():
     """)
     total_hooks = cursor.fetchone()['total']
 
+    cursor.execute("""
+        SELECT COUNT(*) as total
+        FROM leads
+        WHERE viewed = TRUE
+    """)
+    total_viewed = cursor.fetchone()['total']
+
+    cursor.execute("""
+        SELECT COUNT(*) as total
+        FROM leads
+        WHERE viewed = FALSE OR viewed IS NULL
+    """)
+    total_unviewed = cursor.fetchone()['total']
+
     # Get recent uploads
     cursor.execute("""
         SELECT * FROM upload_history
@@ -200,6 +214,8 @@ def index():
                          total_uploads=total_uploads,
                          total_companies=total_companies,
                          total_hooks=total_hooks,
+                         total_viewed=total_viewed,
+                         total_unviewed=total_unviewed,
                          recent_uploads=recent_uploads)
 
 
@@ -211,15 +227,16 @@ def upload():
         if 'files[]' not in request.files:
             flash('No files selected', 'error')
             return redirect(request.url)
-        
+
         files = request.files.getlist('files[]')
         results = []
-        
+        total_new_leads = 0
+
         for file in files:
             if file and file.filename and allowed_file(file.filename):
                 filename = secure_filename(file.filename)
                 csv_content = file.read().decode('utf-8')
-                
+
                 try:
                     result = process_csv(csv_content, filename)
                     results.append({
@@ -227,15 +244,46 @@ def upload():
                         'success': True,
                         **result
                     })
+                    total_new_leads += result.get('inserted', 0)
                 except Exception as e:
                     results.append({
                         'filename': filename,
                         'success': False,
                         'error': str(e)
                     })
-        
+
+        # Auto-generate hooks for new leads without hooks
+        if total_new_leads > 0:
+            try:
+                conn = get_db_connection()
+                cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+                # Get leads without hooks
+                cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
+                leads_without_hooks = cursor.fetchall()
+
+                hooks_generated = 0
+                for lead in leads_without_hooks:
+                    hook = generate_hook_for_lead(lead)
+                    if hook:
+                        cursor.execute("""
+                            UPDATE leads
+                            SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (hook, lead['id']))
+                        conn.commit()
+                        hooks_generated += 1
+
+                cursor.close()
+                conn.close()
+
+                flash(f'Successfully generated {hooks_generated} AI hooks for new leads!', 'success')
+            except Exception as e:
+                print(f"Error generating hooks: {e}")
+                flash(f'Warning: Could not generate hooks automatically. Error: {str(e)}', 'warning')
+
         return render_template('upload_results.html', results=results)
-    
+
     return render_template('upload.html')
 
 
@@ -414,6 +462,43 @@ def api_generate_all_hooks():
         'generated': success,
         'failed': failed
     })
+
+
+@app.route('/api/mark-viewed/<int:lead_id>', methods=['POST'])
+def api_mark_viewed(lead_id):
+    """API endpoint to mark a lead as viewed."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Get user info from request (you can enhance this with actual user authentication)
+    user = request.json.get('user', 'admin') if request.json else 'admin'
+
+    # Update lead as viewed
+    cursor.execute("""
+        UPDATE leads
+        SET viewed = TRUE,
+            viewed_at = CURRENT_TIMESTAMP,
+            viewed_by = %s,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = %s
+        RETURNING viewed, viewed_at, viewed_by
+    """, (user, lead_id))
+
+    result = cursor.fetchone()
+    conn.commit()
+
+    cursor.close()
+    conn.close()
+
+    if result:
+        return jsonify({
+            'success': True,
+            'viewed': result['viewed'],
+            'viewed_at': result['viewed_at'].isoformat() if result['viewed_at'] else None,
+            'viewed_by': result['viewed_by']
+        })
+    else:
+        return jsonify({'error': 'Lead not found'}), 404
 
 
 if __name__ == '__main__':

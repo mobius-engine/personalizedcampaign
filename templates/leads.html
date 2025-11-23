@@ -13,34 +13,39 @@
         <table>
             <thead>
                 <tr>
+                    <th>Status</th>
                     <th>Name</th>
                     <th>Title</th>
                     <th>Company</th>
                     <th>Location</th>
-                    <th>Project</th>
                     <th>Hook</th>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 {% for lead in leads %}
-                <tr id="lead-{{ lead.id }}">
+                <tr id="lead-row-{{ lead.id }}" {% if lead.viewed %}style="background-color: #ffe6e6;"{% endif %} data-viewed="{{ 'true' if lead.viewed else 'false' }}">
+                    <td>
+                        <span id="status-{{ lead.id }}" style="font-size: 20px;">
+                            {% if lead.viewed %}
+                            🔴
+                            {% else %}
+                            ⚪
+                            {% endif %}
+                        </span>
+                    </td>
                     <td>
                         <strong>{{ lead.first_name }} {{ lead.last_name }}</strong>
                         {% if lead.headline %}
                         <br><small style="color: #666;">{{ lead.headline[:60] }}{% if lead.headline|length > 60 %}...{% endif %}</small>
                         {% endif %}
+                        {% if lead.viewed %}
+                        <br><small style="color: #dc3545;">Viewed by {{ lead.viewed_by or 'Unknown' }}</small>
+                        {% endif %}
                     </td>
                     <td>{{ lead.current_title or '-' }}</td>
                     <td>{{ lead.current_company or '-' }}</td>
                     <td>{{ lead.location or '-' }}</td>
-                    <td>
-                        {% if lead.active_project %}
-                        <span class="badge badge-success">{{ lead.active_project }}</span>
-                        {% else %}
-                        -
-                        {% endif %}
-                    </td>
                     <td style="max-width: 300px;">
                         <div id="hook-{{ lead.id }}">
                             {% if lead.hook %}
@@ -51,9 +56,16 @@
                         </div>
                     </td>
                     <td>
-                        <button onclick="generateHook({{ lead.id }})" class="btn" style="padding: 6px 12px; font-size: 12px;" id="btn-{{ lead.id }}">
-                            Generate Hook
-                        </button>
+                        <div style="display: flex; gap: 8px; flex-direction: column;">
+                            {% if lead.profile_url %}
+                            <a href="{{ lead.profile_url }}" target="_blank" class="btn" style="padding: 6px 12px; font-size: 12px; text-decoration: none;" onclick="markAsViewed({{ lead.id }}, event)">
+                                👁️ View Profile
+                            </a>
+                            {% endif %}
+                            <button onclick="generateHook({{ lead.id }})" class="btn" style="padding: 6px 12px; font-size: 12px;" id="btn-{{ lead.id }}">
+                                🤖 Generate Hook
+                            </button>
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -91,7 +103,7 @@ function generateHook(leadId) {
 
     // Disable button and show loading
     btn.disabled = true;
-    btn.textContent = 'Generating...';
+    btn.textContent = '⏳ Generating...';
     hookDiv.innerHTML = '<small style="color: #0077b5;">⏳ Generating hook...</small>';
 
     // Call API
@@ -106,20 +118,56 @@ function generateHook(leadId) {
         if (data.success) {
             const preview = data.hook.length > 100 ? data.hook.substring(0, 100) + '...' : data.hook;
             hookDiv.innerHTML = `<small style="color: #555;">${preview}</small>`;
-            btn.textContent = 'Regenerate';
+            btn.textContent = '🔄 Regenerate';
             btn.disabled = false;
         } else {
             hookDiv.innerHTML = '<small style="color: #dc3545;">❌ Failed to generate</small>';
-            btn.textContent = 'Retry';
+            btn.textContent = '🔄 Retry';
             btn.disabled = false;
         }
     })
     .catch(error => {
         console.error('Error:', error);
         hookDiv.innerHTML = '<small style="color: #dc3545;">❌ Error</small>';
-        btn.textContent = 'Retry';
+        btn.textContent = '🔄 Retry';
         btn.disabled = false;
     });
+}
+
+function markAsViewed(leadId, event) {
+    // Mark the lead as viewed
+    fetch(`/api/mark-viewed/${leadId}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            user: 'admin' // You can replace this with actual user info
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Update the UI
+            const row = document.getElementById(`lead-row-${leadId}`);
+            const status = document.getElementById(`status-${leadId}`);
+
+            // Change background to red
+            row.style.backgroundColor = '#ffe6e6';
+            row.setAttribute('data-viewed', 'true');
+
+            // Change status icon to red circle
+            status.textContent = '🔴';
+
+            console.log(`Lead ${leadId} marked as viewed`);
+        }
+    })
+    .catch(error => {
+        console.error('Error marking as viewed:', error);
+    });
+
+    // Don't prevent the link from opening
+    return true;
 }
 </script>
 {% endblock %}
