@@ -14,6 +14,7 @@ from psycopg2.extras import RealDictCursor
 from werkzeug.utils import secure_filename
 from google.cloud import secretmanager
 from openai import OpenAI
+import threading
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -252,35 +253,16 @@ def upload():
                         'error': str(e)
                     })
 
-        # Auto-generate hooks for new leads without hooks
+        # Auto-generate hooks for new leads in background
         if total_new_leads > 0:
             try:
-                conn = get_db_connection()
-                cursor = conn.cursor(cursor_factory=RealDictCursor)
-
-                # Get leads without hooks
-                cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
-                leads_without_hooks = cursor.fetchall()
-
-                hooks_generated = 0
-                for lead in leads_without_hooks:
-                    hook = generate_hook_for_lead(lead)
-                    if hook:
-                        cursor.execute("""
-                            UPDATE leads
-                            SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                            WHERE id = %s
-                        """, (hook, lead['id']))
-                        conn.commit()
-                        hooks_generated += 1
-
-                cursor.close()
-                conn.close()
-
-                flash(f'Successfully generated {hooks_generated} AI hooks for new leads!', 'success')
+                # Start background thread to generate hooks
+                thread = threading.Thread(target=generate_hooks_background, daemon=True)
+                thread.start()
+                flash(f'CSV upload complete! Generating AI hooks for {total_new_leads} new leads in the background...', 'success')
             except Exception as e:
-                print(f"Error generating hooks: {e}")
-                flash(f'Warning: Could not generate hooks automatically. Error: {str(e)}', 'warning')
+                print(f"Error starting background hook generation: {e}")
+                flash(f'Warning: Could not start background hook generation. Error: {str(e)}', 'warning')
 
         return render_template('upload_results.html', results=results)
 
@@ -387,6 +369,42 @@ Generate only the hook paragraph, nothing else."""
     except Exception as e:
         print(f"Error generating hook: {e}")
         return None
+
+
+def generate_hooks_background():
+    """Background task to generate hooks for leads without hooks."""
+    try:
+        print("🚀 Starting background hook generation...")
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Get leads without hooks
+        cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
+        leads_without_hooks = cursor.fetchall()
+
+        total_leads = len(leads_without_hooks)
+        print(f"📊 Found {total_leads} leads without hooks")
+
+        hooks_generated = 0
+        for idx, lead in enumerate(leads_without_hooks, 1):
+            print(f"⏳ Generating hook {idx}/{total_leads} for lead ID {lead['id']}...")
+            hook = generate_hook_for_lead(lead)
+            if hook:
+                cursor.execute("""
+                    UPDATE leads
+                    SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                """, (hook, lead['id']))
+                conn.commit()
+                hooks_generated += 1
+                print(f"✅ Generated hook {hooks_generated}/{total_leads}")
+
+        cursor.close()
+        conn.close()
+
+        print(f"🎉 Background hook generation complete! Generated {hooks_generated} hooks.")
+    except Exception as e:
+        print(f"❌ Error in background hook generation: {e}")
 
 
 @app.route('/api/generate-hook/<int:lead_id>', methods=['POST'])
