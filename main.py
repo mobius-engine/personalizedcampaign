@@ -12,6 +12,8 @@ from flask import Flask, render_template, request, jsonify, redirect, url_for, f
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from werkzeug.utils import secure_filename
+from google.cloud import secretmanager
+from openai import OpenAI
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
@@ -25,6 +27,20 @@ DB_CONFIG = {
 }
 
 ALLOWED_EXTENSIONS = {'csv'}
+GCP_PROJECT_ID = "jobs-data-linkedin"
+SECRET_NAME = "openai-api-key"
+
+
+def get_openai_api_key():
+    """Retrieve OpenAI API key from GCP Secret Manager."""
+    try:
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{GCP_PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("UTF-8").strip()
+    except Exception as e:
+        print(f"Error retrieving API key: {e}")
+        return None
 
 
 def allowed_file(filename):
@@ -146,36 +162,44 @@ def index():
     """Home page with dashboard."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
+
     # Get statistics
     cursor.execute("SELECT COUNT(*) as total FROM leads")
     total_leads = cursor.fetchone()['total']
-    
+
     cursor.execute("SELECT COUNT(*) as total FROM upload_history")
     total_uploads = cursor.fetchone()['total']
-    
+
     cursor.execute("""
-        SELECT COUNT(DISTINCT current_company) as total 
-        FROM leads 
+        SELECT COUNT(DISTINCT current_company) as total
+        FROM leads
         WHERE current_company IS NOT NULL AND current_company != ''
     """)
     total_companies = cursor.fetchone()['total']
-    
+
+    cursor.execute("""
+        SELECT COUNT(*) as total
+        FROM leads
+        WHERE hook IS NOT NULL AND hook != ''
+    """)
+    total_hooks = cursor.fetchone()['total']
+
     # Get recent uploads
     cursor.execute("""
-        SELECT * FROM upload_history 
-        ORDER BY upload_date DESC 
+        SELECT * FROM upload_history
+        ORDER BY upload_date DESC
         LIMIT 10
     """)
     recent_uploads = cursor.fetchall()
-    
+
     cursor.close()
     conn.close()
-    
-    return render_template('index.html', 
+
+    return render_template('index.html',
                          total_leads=total_leads,
                          total_uploads=total_uploads,
                          total_companies=total_companies,
+                         total_hooks=total_hooks,
                          recent_uploads=recent_uploads)
 
 
@@ -253,14 +277,143 @@ def api_stats():
     """API endpoint for statistics."""
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
+
     cursor.execute("SELECT COUNT(*) as total FROM leads")
     stats = cursor.fetchone()
-    
+
     cursor.close()
     conn.close()
-    
+
     return jsonify(stats)
+
+
+def generate_hook_for_lead(lead):
+    """Generate a personalized hook for a lead using GPT-4o."""
+    name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+    credentials = lead.get('headline', '') or ''
+    title_keywords = lead.get('current_title', '') or ''
+    location = lead.get('location', '') or ''
+    current_role = lead.get('current_title', '') or ''
+    company = lead.get('current_company', '') or ''
+
+    prompt = f"""Parse this information about a professional:
+
+Name: {name}
+Credentials: {credentials}
+Title keywords: {title_keywords}
+Location: {location}
+Current role: {current_role}
+Company: {company}
+
+Use the Name, Credentials, Title keywords, Current role, and Company fields to craft a 1-paragraph "hook". The hook is to establish my credibility as someone who can help secure them a job in this tough market impacted by AI. The language needs to be very simple. The last sentence should be something like - Mobiusengine.ai can help you land your next role... something like that.
+
+The "hook" should:
+- Challenge the reader's current positioning (e.g., "many firms still treat this as…")
+- Point to the elevated value they bring (based on credentials/title keywords)
+- Be concise and impactful
+- Be super pithy, plain, direct and succinct. No more than 3 short sentences
+- Create need by citing how recruiting for roles like theirs are changing due to AI
+- Do not include step-by-step service description or promotion—just the paragraph
+- Write in second person ("you") and reference the credentials and experience from the input
+- Maintain a professional tone suited for a senior-level audience
+
+Generate only the hook paragraph, nothing else."""
+
+    try:
+        api_key = get_openai_api_key()
+        if not api_key:
+            return None
+
+        client = OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {"role": "system", "content": "You are an expert at crafting compelling, concise professional outreach messages."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200
+        )
+
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Error generating hook: {e}")
+        return None
+
+
+@app.route('/api/generate-hook/<int:lead_id>', methods=['POST'])
+def api_generate_hook(lead_id):
+    """API endpoint to generate hook for a specific lead."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Get lead
+    cursor.execute("SELECT * FROM leads WHERE id = %s", (lead_id,))
+    lead = cursor.fetchone()
+
+    if not lead:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Lead not found'}), 404
+
+    # Generate hook
+    hook = generate_hook_for_lead(lead)
+
+    if hook:
+        # Update database
+        cursor.execute("""
+            UPDATE leads
+            SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (hook, lead_id))
+        conn.commit()
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({'success': True, 'hook': hook})
+    else:
+        cursor.close()
+        conn.close()
+        return jsonify({'error': 'Failed to generate hook'}), 500
+
+
+@app.route('/api/generate-all-hooks', methods=['POST'])
+def api_generate_all_hooks():
+    """API endpoint to generate hooks for all leads without hooks."""
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+    # Get leads without hooks
+    cursor.execute("SELECT * FROM leads WHERE hook IS NULL OR hook = '' ORDER BY id")
+    leads = cursor.fetchall()
+
+    total = len(leads)
+    success = 0
+    failed = 0
+
+    for lead in leads:
+        hook = generate_hook_for_lead(lead)
+        if hook:
+            cursor.execute("""
+                UPDATE leads
+                SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                WHERE id = %s
+            """, (hook, lead['id']))
+            conn.commit()
+            success += 1
+        else:
+            failed += 1
+
+    cursor.close()
+    conn.close()
+
+    return jsonify({
+        'success': True,
+        'total': total,
+        'generated': success,
+        'failed': failed
+    })
 
 
 if __name__ == '__main__':
