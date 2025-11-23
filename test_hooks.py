@@ -58,18 +58,20 @@ def generate_hook(lead):
 Profile: {profile_summary}
 
 Structure:
-1. SPECIFIC OBSERVATION: One concrete way their function is changing (name specific tasks/tools being replaced or changed)
-2. ACKNOWLEDGE: "You have experience in [specific thing they do]"
+1. PROBLEM STATEMENT: "AI is now [automating specific tasks], which is changing what [hiring managers/companies] are looking for in [their role]."
+   - Name specific tasks AI is doing
+   - Show the impact/pain point for job seekers
+2. ACKNOWLEDGE: "You have experience in [specific thing they do at their company]"
 3. QUESTION: "Have you thought about repositioning to [specific new role/focus]?"
 4. CLOSE: "mobiusengine.ai has worked with many [their role] in the past 3 years to help them land their next role."
 
+Example for HR Manager:
+"AI is now automating many HR tasks like screening resumes and scheduling interviews, which is changing what hiring managers are looking for in HR leaders. You have experience managing people and processes at Meta. Have you thought about repositioning to HR tech strategy roles? mobiusengine.ai has worked with many HR managers in the past 3 years to help them land their next role."
+
 Example for Product Manager:
-"AI now writes PRDs and runs A/B tests automatically. You have experience building products at Amazon. Have you thought about repositioning to AI product strategy roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
+"AI now writes PRDs and runs A/B tests automatically, which is changing what companies want from product managers. You have experience building products at Amazon. Have you thought about repositioning to AI product strategy roles? mobiusengine.ai has worked with many product managers in the past 3 years to help them land their next role."
 
-Example for Data Analyst:
-"AI pulls reports and builds dashboards in seconds now. You have experience analyzing data at Microsoft. Have you thought about repositioning to AI model interpretation roles? mobiusengine.ai has worked with many data analysts in the past 3 years to help them land their next role."
-
-Write the hook (under 50 words, use simple language):"""
+Write the hook (under 60 words, use simple language):"""
     
     response = client.chat.completions.create(
         model="gpt-4o-mini",
