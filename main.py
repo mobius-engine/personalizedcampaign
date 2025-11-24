@@ -619,7 +619,22 @@ def generate_hooks_background():
                 if result['success'] and result['hook']:
                     all_results.append(result)
                     hooks_generated += 1
-                    print(f"✅ [{completed}/{total_leads}] Generated hook for {result['name']}")
+
+                    # Write to database immediately
+                    try:
+                        db_conn = get_db_connection()
+                        db_cursor = db_conn.cursor()
+                        db_cursor.execute("""
+                            UPDATE leads
+                            SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                            WHERE id = %s
+                        """, (result['hook'], result['id']))
+                        db_conn.commit()
+                        db_cursor.close()
+                        db_conn.close()
+                        print(f"✅ [{completed}/{total_leads}] Generated and saved hook for {result['name']}")
+                    except Exception as e:
+                        print(f"⚠️ [{completed}/{total_leads}] Generated hook but failed to save to DB: {e}")
                 else:
                     print(f"❌ [{completed}/{total_leads}] Failed to generate hook for lead {result['id']}")
 
