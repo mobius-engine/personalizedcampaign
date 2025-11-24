@@ -984,8 +984,9 @@ def api_filter_independent_workers():
 def api_generate_all_hooks():
     """API endpoint to generate AI-focused hooks and save to CSV (async)."""
     # Start background thread for hook generation
+    # NOTE: daemon=False so Cloud Run doesn't kill the thread when request completes
     thread = threading.Thread(target=generate_hooks_background)
-    thread.daemon = True
+    thread.daemon = False  # Keep container alive!
     thread.start()
 
     # Return immediately
