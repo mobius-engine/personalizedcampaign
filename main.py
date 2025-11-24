@@ -564,6 +564,14 @@ def generate_hooks_background():
     import csv
     from datetime import datetime
 
+    # Log that function was called
+    init_msg = "🔵 generate_hooks_background() function called"
+    print(init_msg)
+    hook_generation_logs.append({
+        'timestamp': datetime.now().isoformat(),
+        'message': init_msg
+    })
+
     try:
         # Initialize status in database
         update_task_status('hook_generation',
@@ -737,7 +745,12 @@ def generate_hooks_background():
 
         print(f"🎉 Hook generation complete! {hooks_generated} hooks saved to {csv_path}")
     except Exception as e:
-        print(f"❌ Error in background hook generation: {e}")
+        error_msg = f"❌ FATAL ERROR in background hook generation: {e}"
+        print(error_msg)
+        hook_generation_logs.append({
+            'timestamp': datetime.now().isoformat(),
+            'message': error_msg
+        })
         update_task_status('hook_generation', running=False, message=f'Error: {str(e)}')
         import traceback
         traceback.print_exc()
