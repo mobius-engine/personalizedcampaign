@@ -442,7 +442,7 @@ Generate only the hook paragraph, nothing else."""
 
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "You are an expert at crafting compelling, concise professional outreach messages."},
                 {"role": "user", "content": prompt}
@@ -517,7 +517,7 @@ Example for Mechanical Engineer: "AI is now automating CAD design and simulation
 Write the hook (under 60 words, use simple language):"""
 
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "You are a strategic career advisor focused on AI's impact on professional roles. Be direct and insightful."},
                 {"role": "user", "content": prompt}
@@ -605,6 +605,12 @@ def generate_hooks_background():
         from concurrent.futures import ThreadPoolExecutor, as_completed
         hooks_generated = 0
         all_results = []
+        batch_buffer = []  # Buffer for batching DB writes
+        BATCH_SIZE = 50  # Write to DB every 50 hooks
+
+        # Open persistent DB connection for batching
+        db_conn = get_db_connection()
+        db_cursor = db_conn.cursor()
 
         with ThreadPoolExecutor(max_workers=30) as executor:
             # Submit all tasks
@@ -619,24 +625,27 @@ def generate_hooks_background():
                 if result['success'] and result['hook']:
                     all_results.append(result)
                     hooks_generated += 1
-
-                    # Write to database immediately
-                    try:
-                        db_conn = get_db_connection()
-                        db_cursor = db_conn.cursor()
-                        db_cursor.execute("""
-                            UPDATE leads
-                            SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-                            WHERE id = %s
-                        """, (result['hook'], result['id']))
-                        db_conn.commit()
-                        db_cursor.close()
-                        db_conn.close()
-                        print(f"✅ [{completed}/{total_leads}] Generated and saved hook for {result['name']}")
-                    except Exception as e:
-                        print(f"⚠️ [{completed}/{total_leads}] Generated hook but failed to save to DB: {e}")
+                    batch_buffer.append(result)
+                    print(f"✅ [{completed}/{total_leads}] Generated hook for {result['name']}")
                 else:
                     print(f"❌ [{completed}/{total_leads}] Failed to generate hook for lead {result['id']}")
+
+                # Batch write to database every BATCH_SIZE completions
+                if len(batch_buffer) >= BATCH_SIZE or completed == total_leads:
+                    try:
+                        for item in batch_buffer:
+                            db_cursor.execute("""
+                                UPDATE leads
+                                SET hook = %s, hook_generated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+                                WHERE id = %s
+                            """, (item['hook'], item['id']))
+                        db_conn.commit()
+                        print(f"💾 Saved {len(batch_buffer)} hooks to database")
+                        batch_buffer = []
+                    except Exception as e:
+                        print(f"⚠️ Failed to save batch to DB: {e}")
+                        db_conn.rollback()
+                        batch_buffer = []
 
                 # Update status in database every 10 completions
                 if completed % 10 == 0 or completed == total_leads:
@@ -646,6 +655,10 @@ def generate_hooks_background():
                         stat_value=hooks_generated,
                         message=f'Generated {completed}/{total_leads} hooks - {hooks_generated} successful'
                     )
+
+        # Close DB connection
+        db_cursor.close()
+        db_conn.close()
 
         # Write all results to CSV
         print(f"💾 Writing {len(all_results)} hooks to CSV...")
