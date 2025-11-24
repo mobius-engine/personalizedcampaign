@@ -544,9 +544,12 @@ Write the hook (under 60 words, use simple language):"""
             'success': True
         }
     except Exception as e:
-        print(f"❌ Error generating hook for lead {lead['id']}: {e}")
+        lead_id = lead.get('id', 'unknown')
+        print(f"❌ Error generating hook for lead {lead_id}: {e}")
+        import traceback
+        traceback.print_exc()
         return {
-            'id': lead['id'],
+            'id': lead.get('id'),
             'name': lead.get('name', ''),
             'title': lead.get('title', ''),
             'company': lead.get('company', ''),
@@ -572,12 +575,22 @@ def generate_hooks_background():
             stat_value=0
         )
 
-        print("🚀 Starting background hook generation with 30 parallel workers...")
+        startup_msg = "🚀 Starting background hook generation with 30 parallel workers..."
+        print(startup_msg)
+        hook_generation_logs.append({
+            'timestamp': datetime.now().isoformat(),
+            'message': startup_msg
+        })
 
         # Get OpenAI API key
         api_key = get_openai_api_key()
         if not api_key:
-            print("❌ No OpenAI API key available")
+            error_msg = "❌ No OpenAI API key available"
+            print(error_msg)
+            hook_generation_logs.append({
+                'timestamp': datetime.now().isoformat(),
+                'message': error_msg
+            })
             update_task_status('hook_generation', running=False, message='Error: No API key')
             return
 
