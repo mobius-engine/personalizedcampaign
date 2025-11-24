@@ -32,6 +32,10 @@ ALLOWED_EXTENSIONS = {'csv'}
 GCP_PROJECT_ID = "jobs-data-linkedin"
 SECRET_NAME = "openai-api-key"
 
+# Global list to store recent hook generation logs
+hook_generation_logs = []
+MAX_LOGS = 500
+
 
 def get_openai_api_key():
     """Retrieve OpenAI API key from GCP Secret Manager."""
@@ -626,9 +630,26 @@ def generate_hooks_background():
                     all_results.append(result)
                     hooks_generated += 1
                     batch_buffer.append(result)
-                    print(f"✅ [{completed}/{total_leads}] Generated hook for {result['name']}")
+
+                    log_msg = f"✅ [{completed}/{total_leads}] {result['name']}: {result['hook'][:100]}..."
+                    print(log_msg)
+                    hook_generation_logs.append({
+                        'timestamp': datetime.now().isoformat(),
+                        'message': log_msg,
+                        'hook': result['hook'],
+                        'name': result['name']
+                    })
+                    if len(hook_generation_logs) > MAX_LOGS:
+                        hook_generation_logs.pop(0)
                 else:
-                    print(f"❌ [{completed}/{total_leads}] Failed to generate hook for lead {result['id']}")
+                    log_msg = f"❌ [{completed}/{total_leads}] Failed for lead {result['id']}"
+                    print(log_msg)
+                    hook_generation_logs.append({
+                        'timestamp': datetime.now().isoformat(),
+                        'message': log_msg
+                    })
+                    if len(hook_generation_logs) > MAX_LOGS:
+                        hook_generation_logs.pop(0)
 
                 # Batch write to database every BATCH_SIZE completions
                 if len(batch_buffer) >= BATCH_SIZE or completed == total_leads:
@@ -640,10 +661,27 @@ def generate_hooks_background():
                                 WHERE id = %s
                             """, (item['hook'], item['id']))
                         db_conn.commit()
-                        print(f"💾 Saved {len(batch_buffer)} hooks to database")
+
+                        log_msg = f"💾 Saved {len(batch_buffer)} hooks to database"
+                        print(log_msg)
+                        hook_generation_logs.append({
+                            'timestamp': datetime.now().isoformat(),
+                            'message': log_msg
+                        })
+                        if len(hook_generation_logs) > MAX_LOGS:
+                            hook_generation_logs.pop(0)
+
                         batch_buffer = []
                     except Exception as e:
-                        print(f"⚠️ Failed to save batch to DB: {e}")
+                        log_msg = f"⚠️ Failed to save batch to DB: {e}"
+                        print(log_msg)
+                        hook_generation_logs.append({
+                            'timestamp': datetime.now().isoformat(),
+                            'message': log_msg
+                        })
+                        if len(hook_generation_logs) > MAX_LOGS:
+                            hook_generation_logs.pop(0)
+
                         db_conn.rollback()
                         batch_buffer = []
 
@@ -1375,6 +1413,16 @@ def analytics_contact_status():
         return jsonify([dict(row) for row in results])
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/hook-generation-logs')
+def api_hook_generation_logs():
+    """Get recent hook generation logs."""
+    limit = request.args.get('limit', 100, type=int)
+    return jsonify({
+        'logs': hook_generation_logs[-limit:],
+        'total': len(hook_generation_logs)
+    })
 
 
 if __name__ == '__main__':
