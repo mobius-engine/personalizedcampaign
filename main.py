@@ -442,7 +442,7 @@ Generate only the hook paragraph, nothing else."""
 
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are an expert at crafting compelling, concise professional outreach messages."},
                 {"role": "user", "content": prompt}
@@ -517,7 +517,7 @@ Example for Mechanical Engineer: "AI is now automating CAD design and simulation
 Write the hook (under 60 words, use simple language):"""
 
         response = client.chat.completions.create(
-            model="gpt-4.1",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": "You are a strategic career advisor focused on AI's impact on professional roles. Be direct and insightful."},
                 {"role": "user", "content": prompt}
