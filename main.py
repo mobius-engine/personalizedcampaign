@@ -21,12 +21,23 @@ app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Database configuration
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', '35.193.184.122'),
-    'database': os.getenv('DB_NAME', 'linkedin_leads_data'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', ''),
-}
+# Check if running on Cloud Run (use Unix socket) or locally (use TCP)
+if os.getenv('K_SERVICE'):
+    # Running on Cloud Run - use Unix socket
+    DB_CONFIG = {
+        'host': '/cloudsql/jobs-data-linkedin:us-central1:linkedin-leads-db',
+        'database': os.getenv('DB_NAME', 'linkedin_leads_data'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+    }
+else:
+    # Running locally - use TCP connection
+    DB_CONFIG = {
+        'host': os.getenv('DB_HOST', '35.193.184.122'),
+        'database': os.getenv('DB_NAME', 'linkedin_leads_data'),
+        'user': os.getenv('DB_USER', 'postgres'),
+        'password': os.getenv('DB_PASSWORD', ''),
+    }
 
 ALLOWED_EXTENSIONS = {'csv'}
 GCP_PROJECT_ID = "jobs-data-linkedin"
@@ -361,35 +372,144 @@ def upload():
 
 @app.route('/leads')
 def leads():
-    """View all leads."""
+    """View all leads with filtering and sorting."""
     page = request.args.get('page', 1, type=int)
     per_page = 50
     offset = (page - 1) * per_page
-    
+
+    # Get filter parameters
+    hook_filter = request.args.get('hook_filter', 'all')  # all, has_hook, no_hook
+    contacted_filter = request.args.get('contacted_filter', 'all')  # all, contacted, not_contacted
+    location_filter = request.args.get('location', '')
+    title_filter = request.args.get('title', '')
+    company_filter = request.args.get('company', '')
+    search_query = request.args.get('search', '')
+
+    # Get sort parameters
+    sort_by = request.args.get('sort_by', 'created_at')  # created_at, first_name, current_title, current_company, location
+    sort_order = request.args.get('sort_order', 'desc')  # asc, desc
+
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
-    
-    cursor.execute("SELECT COUNT(*) as total FROM leads")
+
+    # Build WHERE clause
+    where_clauses = []
+    params = []
+
+    # Hook filter
+    if hook_filter == 'has_hook':
+        where_clauses.append("hook IS NOT NULL AND hook != ''")
+    elif hook_filter == 'no_hook':
+        where_clauses.append("(hook IS NULL OR hook = '')")
+
+    # Contacted filter (viewed = contacted)
+    if contacted_filter == 'contacted':
+        where_clauses.append("viewed = TRUE")
+    elif contacted_filter == 'not_contacted':
+        where_clauses.append("(viewed = FALSE OR viewed IS NULL)")
+
+    # Location filter
+    if location_filter:
+        where_clauses.append("location ILIKE %s")
+        params.append(f"%{location_filter}%")
+
+    # Title filter
+    if title_filter:
+        where_clauses.append("current_title ILIKE %s")
+        params.append(f"%{title_filter}%")
+
+    # Company filter
+    if company_filter:
+        where_clauses.append("current_company ILIKE %s")
+        params.append(f"%{company_filter}%")
+
+    # Search query (searches across name, title, company, location)
+    if search_query:
+        where_clauses.append("""
+            (first_name ILIKE %s OR last_name ILIKE %s OR
+             current_title ILIKE %s OR current_company ILIKE %s OR
+             location ILIKE %s OR headline ILIKE %s)
+        """)
+        search_param = f"%{search_query}%"
+        params.extend([search_param] * 6)
+
+    # Build WHERE clause string
+    where_sql = ""
+    if where_clauses:
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    # Validate sort_by to prevent SQL injection
+    valid_sort_columns = ['created_at', 'first_name', 'last_name', 'current_title', 'current_company', 'location', 'viewed']
+    if sort_by not in valid_sort_columns:
+        sort_by = 'created_at'
+
+    # Validate sort_order
+    if sort_order not in ['asc', 'desc']:
+        sort_order = 'desc'
+
+    # Get total count with filters
+    cursor.execute(f"SELECT COUNT(*) as total FROM leads {where_sql}", params)
     total = cursor.fetchone()['total']
-    
-    cursor.execute("""
-        SELECT * FROM leads 
-        ORDER BY created_at DESC 
+
+    # Get filtered and sorted leads
+    cursor.execute(f"""
+        SELECT * FROM leads
+        {where_sql}
+        ORDER BY {sort_by} {sort_order.upper()}, id DESC
         LIMIT %s OFFSET %s
-    """, (per_page, offset))
-    
+    """, params + [per_page, offset])
+
     leads_list = cursor.fetchall()
-    
+
+    # Get unique locations, titles, and companies for filter dropdowns (limit to top 50 for performance)
+    cursor.execute("""
+        SELECT DISTINCT location
+        FROM leads
+        WHERE location IS NOT NULL AND location != ''
+        ORDER BY location
+        LIMIT 50
+    """)
+    locations = [row['location'] for row in cursor.fetchall()]
+
+    cursor.execute("""
+        SELECT DISTINCT current_title
+        FROM leads
+        WHERE current_title IS NOT NULL AND current_title != ''
+        ORDER BY current_title
+        LIMIT 50
+    """)
+    titles = [row['current_title'] for row in cursor.fetchall()]
+
+    cursor.execute("""
+        SELECT DISTINCT current_company
+        FROM leads
+        WHERE current_company IS NOT NULL AND current_company != ''
+        ORDER BY current_company
+        LIMIT 50
+    """)
+    companies = [row['current_company'] for row in cursor.fetchall()]
+
     cursor.close()
     conn.close()
-    
+
     total_pages = (total + per_page - 1) // per_page
-    
-    return render_template('leads.html', 
-                         leads=leads_list, 
-                         page=page, 
+
+    return render_template('leads.html',
+                         leads=leads_list,
+                         page=page,
                          total_pages=total_pages,
-                         total=total)
+                         total=total,
+                         hook_filter=hook_filter,
+                         contacted_filter=contacted_filter,
+                         location_filter=location_filter,
+                         title_filter=title_filter,
+                         company_filter=company_filter,
+                         search_query=search_query,
+                         sort_by=sort_by,
+                         sort_order=sort_order,
+                         locations=locations,
+                         titles=titles,
+                         companies=companies)
 
 
 @app.route('/api/stats')

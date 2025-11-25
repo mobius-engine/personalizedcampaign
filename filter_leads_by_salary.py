@@ -11,13 +11,14 @@ from google.cloud import secretmanager
 from openai import OpenAI
 import json
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Database configuration
 DB_CONFIG = {
     'host': os.getenv('DB_HOST', '35.193.184.122'),
     'database': os.getenv('DB_NAME', 'linkedin_leads_data'),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'TempPassword123!'),
+    'password': os.getenv('DB_PASSWORD', 'Mobius@2024'),
 }
 
 GCP_PROJECT_ID = "jobs-data-linkedin"
@@ -25,16 +26,11 @@ SECRET_NAME = "openai-api-key"
 
 
 def get_openai_api_key():
-    """Retrieve OpenAI API key from GCP Secret Manager."""
-    try:
-        client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{GCP_PROJECT_ID}/secrets/{SECRET_NAME}/versions/latest"
-        response = client.access_secret_version(request={"name": name})
-        return response.payload.data.decode("UTF-8").strip()
-    except Exception as e:
-        print(f"Error retrieving API key: {e}")
-        # Try environment variable as fallback
-        return os.getenv('OPENAI_API_KEY')
+    """Retrieve OpenAI API key from environment variable."""
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        print("❌ OPENAI_API_KEY environment variable not set!")
+    return api_key
 
 
 def estimate_salary(lead, openai_client):
@@ -64,7 +60,7 @@ Respond with ONLY a JSON object in this exact format:
 
     try:
         response = openai_client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4.1-mini",
             messages=[
                 {"role": "system", "content": "You are an expert salary analyst with deep knowledge of US job market compensation. Respond only with valid JSON."},
                 {"role": "user", "content": prompt}
@@ -106,27 +102,42 @@ def main():
 
     leads_to_remove = []
     leads_to_keep = []
-    
-    for idx, lead in enumerate(all_leads, 1):
-        name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
-        title = lead.get('current_title', '') or 'Unknown'
-        
-        print(f"[{idx}/{total_leads}] Analyzing: {name} - {title}")
-        
-        result = estimate_salary(lead, openai_client)
-        
-        if result['likely_150k_plus']:
-            leads_to_keep.append(lead)
-            print(f"   ✅ KEEP - Likely $150K+ ({result['confidence']} confidence)")
-        else:
-            leads_to_remove.append(lead)
-            print(f"   ❌ REMOVE - Likely < $150K ({result['confidence']} confidence)")
-        
-        print(f"   💡 {result['reasoning']}\n")
-        
-        # Small delay to avoid rate limits
-        if idx % 10 == 0:
-            time.sleep(1)
+    completed = 0
+
+    print(f"🚀 Processing with 30 parallel workers...\n")
+
+    # Process leads in parallel
+    with ThreadPoolExecutor(max_workers=30) as executor:
+        # Submit all tasks
+        future_to_lead = {executor.submit(estimate_salary, lead, openai_client): lead for lead in all_leads}
+
+        # Process results as they complete
+        for future in as_completed(future_to_lead):
+            lead = future_to_lead[future]
+            completed += 1
+
+            name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
+            title = lead.get('current_title', '') or 'Unknown'
+
+            try:
+                result = future.result()
+
+                if result['likely_150k_plus']:
+                    leads_to_keep.append(lead)
+                    print(f"[{completed}/{total_leads}] ✅ KEEP - {name} - {title}")
+                    print(f"   💡 {result['reasoning'][:100]}...\n")
+                else:
+                    leads_to_remove.append(lead)
+                    print(f"[{completed}/{total_leads}] ❌ REMOVE - {name} - {title}")
+                    print(f"   💡 {result['reasoning'][:100]}...\n")
+
+                # Progress update every 100 leads
+                if completed % 100 == 0:
+                    print(f"📊 Progress: {completed}/{total_leads} ({int(completed/total_leads*100)}%) - Keeping: {len(leads_to_keep)}, Removing: {len(leads_to_remove)}\n")
+
+            except Exception as e:
+                print(f"[{completed}/{total_leads}] ⚠️  Error analyzing {name}: {e}")
+                leads_to_keep.append(lead)  # Keep by default on error
 
     print(f"\n{'='*70}")
     print(f"📊 ANALYSIS COMPLETE")
@@ -137,7 +148,13 @@ def main():
     print(f"{'='*70}\n")
     
     if leads_to_remove:
-        print(f"⚠️  About to DELETE {len(leads_to_remove)} leads from database!")
+        # Save IDs to file for batch deletion
+        ids_to_remove = [lead['id'] for lead in leads_to_remove]
+        with open('leads_to_remove_ids.json', 'w') as f:
+            json.dump(ids_to_remove, f)
+        print(f"💾 Saved {len(ids_to_remove)} lead IDs to leads_to_remove_ids.json")
+
+        print(f"\n⚠️  About to DELETE {len(leads_to_remove)} leads from database!")
         print("Leads to be removed:")
         for lead in leads_to_remove[:10]:  # Show first 10
             name = f"{lead.get('first_name', '')} {lead.get('last_name', '')}".strip()
@@ -145,15 +162,19 @@ def main():
             print(f"  - {name} ({title})")
         if len(leads_to_remove) > 10:
             print(f"  ... and {len(leads_to_remove) - 10} more")
-        
+
         print("\n")
         response = input("Type 'DELETE' to confirm removal: ")
         if response == 'DELETE':
-            print("\n🗑️  Deleting leads...")
-            for lead in leads_to_remove:
-                cursor.execute("DELETE FROM leads WHERE id = %s", (lead['id'],))
-            conn.commit()
-            print(f"✅ Successfully deleted {len(leads_to_remove)} leads")
+            print("\n🗑️  Deleting leads in batches...")
+            # Delete in batches of 1000 for speed
+            batch_size = 1000
+            for i in range(0, len(ids_to_remove), batch_size):
+                batch = ids_to_remove[i:i+batch_size]
+                cursor.execute("DELETE FROM leads WHERE id = ANY(%s)", (batch,))
+                conn.commit()
+                print(f"  ✅ Deleted batch {i//batch_size + 1}/{(len(ids_to_remove)-1)//batch_size + 1} ({len(batch)} leads)")
+            print(f"\n✅ Successfully deleted {len(leads_to_remove)} leads!")
         else:
             print("❌ Deletion cancelled")
     else:

@@ -8,16 +8,136 @@
     <a href="/upload" class="btn">📤 Upload CSV</a>
 </div>
 
+<!-- Filters Section -->
+<div class="card" style="margin-bottom: 20px;">
+    <h3 style="margin-top: 0;">🔍 Filters & Search</h3>
+    <form method="GET" action="/leads" id="filterForm">
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+            <!-- Search Box -->
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">🔎 Search</label>
+                <input type="text" name="search" value="{{ search_query or '' }}" placeholder="Name, title, company..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+            </div>
+
+            <!-- Hook Filter -->
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">💬 Hook Status</label>
+                <select name="hook_filter" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="all" {% if hook_filter == 'all' %}selected{% endif %}>All Leads</option>
+                    <option value="has_hook" {% if hook_filter == 'has_hook' %}selected{% endif %}>Has Hook</option>
+                    <option value="no_hook" {% if hook_filter == 'no_hook' %}selected{% endif %}>No Hook</option>
+                </select>
+            </div>
+
+            <!-- Contacted Filter -->
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">📞 Contact Status</label>
+                <select name="contacted_filter" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="all" {% if contacted_filter == 'all' %}selected{% endif %}>All Leads</option>
+                    <option value="not_contacted" {% if contacted_filter == 'not_contacted' %}selected{% endif %}>Not Contacted</option>
+                    <option value="contacted" {% if contacted_filter == 'contacted' %}selected{% endif %}>Contacted</option>
+                </select>
+            </div>
+
+            <!-- Location Filter -->
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">📍 Location</label>
+                <input type="text" name="location" value="{{ location_filter or '' }}" placeholder="Filter by location..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" list="locations-list">
+                <datalist id="locations-list">
+                    {% for loc in locations %}
+                    <option value="{{ loc }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+
+            <!-- Title Filter -->
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">💼 Job Title</label>
+                <input type="text" name="title" value="{{ title_filter or '' }}" placeholder="Filter by title..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" list="titles-list">
+                <datalist id="titles-list">
+                    {% for title in titles %}
+                    <option value="{{ title }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+
+            <!-- Company Filter -->
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">🏢 Company</label>
+                <input type="text" name="company" value="{{ company_filter or '' }}" placeholder="Filter by company..." style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" list="companies-list">
+                <datalist id="companies-list">
+                    {% for comp in companies %}
+                    <option value="{{ comp }}">
+                    {% endfor %}
+                </datalist>
+            </div>
+        </div>
+
+        <!-- Sort Options -->
+        <div style="display: flex; gap: 15px; margin-bottom: 15px; align-items: flex-end;">
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">📊 Sort By</label>
+                <select name="sort_by" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="created_at" {% if sort_by == 'created_at' %}selected{% endif %}>Date Added</option>
+                    <option value="first_name" {% if sort_by == 'first_name' %}selected{% endif %}>First Name</option>
+                    <option value="last_name" {% if sort_by == 'last_name' %}selected{% endif %}>Last Name</option>
+                    <option value="current_title" {% if sort_by == 'current_title' %}selected{% endif %}>Job Title</option>
+                    <option value="current_company" {% if sort_by == 'current_company' %}selected{% endif %}>Company</option>
+                    <option value="location" {% if sort_by == 'location' %}selected{% endif %}>Location</option>
+                    <option value="viewed" {% if sort_by == 'viewed' %}selected{% endif %}>Contact Status</option>
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">↕️ Order</label>
+                <select name="sort_order" style="padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <option value="asc" {% if sort_order == 'asc' %}selected{% endif %}>Ascending</option>
+                    <option value="desc" {% if sort_order == 'desc' %}selected{% endif %}>Descending</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div style="display: flex; gap: 10px;">
+            <button type="submit" class="btn" style="background-color: #0077b5;">🔍 Apply Filters</button>
+            <a href="/leads" class="btn" style="background-color: #6c757d; text-decoration: none;">🔄 Clear All</a>
+        </div>
+
+        <!-- Preserve page number on filter -->
+        <input type="hidden" name="page" value="1">
+    </form>
+</div>
+
 <div class="card">
     <div style="overflow-x: auto;">
         <table>
             <thead>
                 <tr>
-                    <th>Status</th>
-                    <th>Name</th>
-                    <th>Title</th>
-                    <th>Company</th>
-                    <th>Location</th>
+                    <th>
+                        <a href="?sort_by=viewed&sort_order={{ 'asc' if sort_by == 'viewed' and sort_order == 'desc' else 'desc' }}{% if hook_filter != 'all' %}&hook_filter={{ hook_filter }}{% endif %}{% if contacted_filter != 'all' %}&contacted_filter={{ contacted_filter }}{% endif %}{% if location_filter %}&location={{ location_filter|urlencode }}{% endif %}{% if title_filter %}&title={{ title_filter|urlencode }}{% endif %}{% if company_filter %}&company={{ company_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}&page={{ page }}" style="color: inherit; text-decoration: none; display: block;">
+                            Status {% if sort_by == 'viewed' %}{{ '↑' if sort_order == 'asc' else '↓' }}{% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="?sort_by=first_name&sort_order={{ 'asc' if sort_by == 'first_name' and sort_order == 'desc' else 'desc' }}{% if hook_filter != 'all' %}&hook_filter={{ hook_filter }}{% endif %}{% if contacted_filter != 'all' %}&contacted_filter={{ contacted_filter }}{% endif %}{% if location_filter %}&location={{ location_filter|urlencode }}{% endif %}{% if title_filter %}&title={{ title_filter|urlencode }}{% endif %}{% if company_filter %}&company={{ company_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}&page={{ page }}" style="color: inherit; text-decoration: none; display: block;">
+                            Name {% if sort_by == 'first_name' %}{{ '↑' if sort_order == 'asc' else '↓' }}{% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="?sort_by=current_title&sort_order={{ 'asc' if sort_by == 'current_title' and sort_order == 'desc' else 'desc' }}{% if hook_filter != 'all' %}&hook_filter={{ hook_filter }}{% endif %}{% if contacted_filter != 'all' %}&contacted_filter={{ contacted_filter }}{% endif %}{% if location_filter %}&location={{ location_filter|urlencode }}{% endif %}{% if title_filter %}&title={{ title_filter|urlencode }}{% endif %}{% if company_filter %}&company={{ company_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}&page={{ page }}" style="color: inherit; text-decoration: none; display: block;">
+                            Title {% if sort_by == 'current_title' %}{{ '↑' if sort_order == 'asc' else '↓' }}{% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="?sort_by=current_company&sort_order={{ 'asc' if sort_by == 'current_company' and sort_order == 'desc' else 'desc' }}{% if hook_filter != 'all' %}&hook_filter={{ hook_filter }}{% endif %}{% if contacted_filter != 'all' %}&contacted_filter={{ contacted_filter }}{% endif %}{% if location_filter %}&location={{ location_filter|urlencode }}{% endif %}{% if title_filter %}&title={{ title_filter|urlencode }}{% endif %}{% if company_filter %}&company={{ company_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}&page={{ page }}" style="color: inherit; text-decoration: none; display: block;">
+                            Company {% if sort_by == 'current_company' %}{{ '↑' if sort_order == 'asc' else '↓' }}{% endif %}
+                        </a>
+                    </th>
+                    <th>
+                        <a href="?sort_by=location&sort_order={{ 'asc' if sort_by == 'location' and sort_order == 'desc' else 'desc' }}{% if hook_filter != 'all' %}&hook_filter={{ hook_filter }}{% endif %}{% if contacted_filter != 'all' %}&contacted_filter={{ contacted_filter }}{% endif %}{% if location_filter %}&location={{ location_filter|urlencode }}{% endif %}{% if title_filter %}&title={{ title_filter|urlencode }}{% endif %}{% if company_filter %}&company={{ company_filter|urlencode }}{% endif %}{% if search_query %}&search={{ search_query|urlencode }}{% endif %}&page={{ page }}" style="color: inherit; text-decoration: none; display: block;">
+                            Location {% if sort_by == 'location' %}{{ '↑' if sort_order == 'asc' else '↓' }}{% endif %}
+                        </a>
+                    </th>
                     <th>Hook</th>
                     <th>Actions</th>
                 </tr>
@@ -46,10 +166,10 @@
                     <td>{{ lead.current_title or '-' }}</td>
                     <td>{{ lead.current_company or '-' }}</td>
                     <td>{{ lead.location or '-' }}</td>
-                    <td style="max-width: 500px; min-width: 400px;">
+                    <td style="max-width: 600px; min-width: 500px;">
                         <div id="hook-{{ lead.id }}">
                             {% if lead.hook %}
-                            <small style="color: #555; white-space: normal; word-wrap: break-word;">{{ lead.hook[:150] }}{% if lead.hook|length > 150 %}...{% endif %}</small>
+                            <small style="color: #555; white-space: normal; word-wrap: break-word; line-height: 1.5;">{{ lead.hook }}</small>
                             {% else %}
                             <span style="color: #999;">No hook</span>
                             {% endif %}
@@ -80,22 +200,33 @@
     
     {% if total_pages > 1 %}
     <div class="pagination">
+        {% set query_params = [] %}
+        {% if hook_filter != 'all' %}{% set _ = query_params.append('hook_filter=' + hook_filter) %}{% endif %}
+        {% if contacted_filter != 'all' %}{% set _ = query_params.append('contacted_filter=' + contacted_filter) %}{% endif %}
+        {% if location_filter %}{% set _ = query_params.append('location=' + location_filter|urlencode) %}{% endif %}
+        {% if title_filter %}{% set _ = query_params.append('title=' + title_filter|urlencode) %}{% endif %}
+        {% if company_filter %}{% set _ = query_params.append('company=' + company_filter|urlencode) %}{% endif %}
+        {% if search_query %}{% set _ = query_params.append('search=' + search_query|urlencode) %}{% endif %}
+        {% if sort_by != 'created_at' %}{% set _ = query_params.append('sort_by=' + sort_by) %}{% endif %}
+        {% if sort_order != 'desc' %}{% set _ = query_params.append('sort_order=' + sort_order) %}{% endif %}
+        {% set query_string = '&' + query_params|join('&') if query_params else '' %}
+
         {% if page > 1 %}
-        <a href="?page={{ page - 1 }}">← Previous</a>
+        <a href="?page={{ page - 1 }}{{ query_string }}">← Previous</a>
         {% endif %}
-        
+
         {% for p in range(1, total_pages + 1) %}
             {% if p == page %}
             <span class="active">{{ p }}</span>
             {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
-            <a href="?page={{ p }}">{{ p }}</a>
+            <a href="?page={{ p }}{{ query_string }}">{{ p }}</a>
             {% elif p == page - 3 or p == page + 3 %}
             <span>...</span>
             {% endif %}
         {% endfor %}
-        
+
         {% if page < total_pages %}
-        <a href="?page={{ page + 1 }}">Next →</a>
+        <a href="?page={{ page + 1 }}{{ query_string }}">Next →</a>
         {% endif %}
     </div>
     {% endif %}
@@ -121,10 +252,13 @@ function generateHook(leadId) {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-            const preview = data.hook.length > 150 ? data.hook.substring(0, 150) + '...' : data.hook;
-            hookDiv.innerHTML = `<small style="color: #555; white-space: normal; word-wrap: break-word;">${preview}</small>`;
+            hookDiv.innerHTML = `<small style="color: #555; white-space: normal; word-wrap: break-word; line-height: 1.5;">${data.hook}</small>`;
             btn.textContent = '🔄 Regenerate';
             btn.disabled = false;
+
+            // Update the data-hook attribute for copying
+            const row = document.getElementById(`lead-row-${leadId}`);
+            row.setAttribute('data-hook', data.hook);
         } else {
             hookDiv.innerHTML = '<small style="color: #dc3545;">❌ Failed to generate</small>';
             btn.textContent = '🔄 Retry';
