@@ -1745,7 +1745,8 @@ def scheduler_debug_columns():
 
         return jsonify({
             'bookings_columns': list(bookings_row.keys()) if bookings_row else [],
-            'prospects_columns': list(prospects_row.keys()) if prospects_row else []
+            'prospects_columns': list(prospects_row.keys()) if prospects_row else [],
+            'sample_prospect': dict(prospects_row) if prospects_row else {}
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
