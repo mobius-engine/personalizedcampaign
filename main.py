@@ -1737,16 +1737,16 @@ def scheduler_todays_bookings():
         cursor.execute("""
             SELECT
                 b.id,
-                b.scheduled_at,
-                b.created_at,
+                b."scheduledAt" as scheduled_at,
+                b."createdAt" as created_at,
                 b.status,
                 p.name,
                 p.email,
-                p.linkedin_url
+                p."linkedinUrl" as linkedin_url
             FROM bookings b
-            JOIN prospects p ON b.prospect_id = p.id
-            WHERE DATE(b.created_at) = CURRENT_DATE
-            ORDER BY b.created_at DESC
+            JOIN prospects p ON b."prospectId" = p.id
+            WHERE DATE(b."createdAt") = CURRENT_DATE
+            ORDER BY b."createdAt" DESC
         """)
 
         results = cursor.fetchall()
@@ -1780,23 +1780,23 @@ def scheduler_upcoming_calls():
 
         cursor.execute("""
             SELECT
-                DATE(b.scheduled_at) as date,
+                DATE(b."scheduledAt") as date,
                 COUNT(*) as count,
                 json_agg(
                     json_build_object(
                         'id', b.id,
-                        'time', b.scheduled_at,
+                        'time', b."scheduledAt",
                         'status', b.status,
                         'name', p.name,
                         'email', p.email,
-                        'linkedinUrl', p.linkedin_url
-                    ) ORDER BY b.scheduled_at
+                        'linkedinUrl', p."linkedinUrl"
+                    ) ORDER BY b."scheduledAt"
                 ) as bookings
             FROM bookings b
-            JOIN prospects p ON b.prospect_id = p.id
-            WHERE b.scheduled_at >= CURRENT_DATE
+            JOIN prospects p ON b."prospectId" = p.id
+            WHERE b."scheduledAt" >= CURRENT_DATE
                 AND b.status != 'cancelled'
-            GROUP BY DATE(b.scheduled_at)
+            GROUP BY DATE(b."scheduledAt")
             ORDER BY date ASC
             LIMIT 60
         """)
