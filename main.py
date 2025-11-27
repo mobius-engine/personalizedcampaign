@@ -1761,15 +1761,15 @@ def scheduler_todays_bookings():
         cursor.execute("""
             SELECT
                 bookings.id,
-                "startTime" as scheduled_at,
-                "createdAt" as created_at,
+                bookings."startTime" as scheduled_at,
+                bookings."createdAt" as created_at,
                 bookings.status,
                 prospects.name,
                 prospects.email
             FROM bookings
-            JOIN prospects ON "prospectId" = prospects.id
-            WHERE DATE("createdAt") = CURRENT_DATE
-            ORDER BY "createdAt" DESC
+            JOIN prospects ON bookings."prospectId" = prospects.id
+            WHERE DATE(bookings."createdAt") = CURRENT_DATE
+            ORDER BY bookings."createdAt" DESC
         """)
 
         results = cursor.fetchall()
@@ -1802,22 +1802,22 @@ def scheduler_upcoming_calls():
 
         cursor.execute("""
             SELECT
-                DATE("startTime") as date,
+                DATE(bookings."startTime") as date,
                 COUNT(*) as count,
                 json_agg(
                     json_build_object(
                         'id', bookings.id,
-                        'time', "startTime",
+                        'time', bookings."startTime",
                         'status', bookings.status,
                         'name', prospects.name,
                         'email', prospects.email
-                    ) ORDER BY "startTime"
+                    ) ORDER BY bookings."startTime"
                 ) as bookings
             FROM bookings
-            JOIN prospects ON "prospectId" = prospects.id
-            WHERE "startTime" >= CURRENT_DATE
+            JOIN prospects ON bookings."prospectId" = prospects.id
+            WHERE bookings."startTime" >= CURRENT_DATE
                 AND bookings.status != 'cancelled'
-            GROUP BY DATE("startTime")
+            GROUP BY DATE(bookings."startTime")
             ORDER BY date ASC
             LIMIT 60
         """)
