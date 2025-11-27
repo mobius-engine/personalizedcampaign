@@ -1602,7 +1602,7 @@ def scheduler_summary():
         total_prospects = cursor.fetchone()['total']
 
         # Qualified prospects
-        cursor.execute("SELECT COUNT(*) as qualified FROM prospects WHERE is_qualified = TRUE")
+        cursor.execute("SELECT COUNT(*) as qualified FROM prospects WHERE qualified = TRUE")
         qualified_prospects = cursor.fetchone()['qualified']
 
         # Total bookings
@@ -1710,12 +1710,12 @@ def scheduler_prospects_qualification():
         cursor.execute("""
             SELECT
                 CASE
-                    WHEN is_qualified = TRUE THEN 'Qualified'
+                    WHEN qualified = TRUE THEN 'Qualified'
                     ELSE 'Not Qualified'
                 END as status,
                 COUNT(*) as count
             FROM prospects
-            GROUP BY is_qualified
+            GROUP BY qualified
         """)
 
         results = cursor.fetchall()
