@@ -1737,16 +1737,16 @@ def scheduler_todays_bookings():
         cursor.execute("""
             SELECT
                 b.id,
-                b."scheduledAt",
-                b."createdAt",
+                b.scheduled_at,
+                b.created_at,
                 b.status,
                 p.name,
                 p.email,
-                p."linkedinUrl"
+                p.linkedin_url
             FROM bookings b
-            JOIN prospects p ON b."prospectId" = p.id
-            WHERE DATE(b."createdAt") = CURRENT_DATE
-            ORDER BY b."createdAt" DESC
+            JOIN prospects p ON b.prospect_id = p.id
+            WHERE DATE(b.created_at) = CURRENT_DATE
+            ORDER BY b.created_at DESC
         """)
 
         results = cursor.fetchall()
@@ -1758,12 +1758,12 @@ def scheduler_todays_bookings():
         for row in results:
             data.append({
                 'id': row['id'],
-                'scheduled_at': row['scheduledAt'].isoformat() if row['scheduledAt'] else None,
-                'created_at': row['createdAt'].isoformat() if row['createdAt'] else None,
+                'scheduled_at': row['scheduled_at'].isoformat() if row['scheduled_at'] else None,
+                'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                 'status': row['status'],
                 'name': row['name'],
                 'email': row['email'],
-                'linkedin_url': row['linkedinUrl']
+                'linkedin_url': row['linkedin_url']
             })
 
         return jsonify(data)
@@ -1780,23 +1780,23 @@ def scheduler_upcoming_calls():
 
         cursor.execute("""
             SELECT
-                DATE(b."scheduledAt") as date,
+                DATE(b.scheduled_at) as date,
                 COUNT(*) as count,
                 json_agg(
                     json_build_object(
                         'id', b.id,
-                        'time', b."scheduledAt",
+                        'time', b.scheduled_at,
                         'status', b.status,
                         'name', p.name,
                         'email', p.email,
-                        'linkedinUrl', p."linkedinUrl"
-                    ) ORDER BY b."scheduledAt"
+                        'linkedinUrl', p.linkedin_url
+                    ) ORDER BY b.scheduled_at
                 ) as bookings
             FROM bookings b
-            JOIN prospects p ON b."prospectId" = p.id
-            WHERE b."scheduledAt" >= CURRENT_DATE
+            JOIN prospects p ON b.prospect_id = p.id
+            WHERE b.scheduled_at >= CURRENT_DATE
                 AND b.status != 'cancelled'
-            GROUP BY DATE(b."scheduledAt")
+            GROUP BY DATE(b.scheduled_at)
             ORDER BY date ASC
             LIMIT 60
         """)
