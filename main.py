@@ -1648,12 +1648,12 @@ def scheduler_bookings_timeline():
 
         cursor.execute("""
             SELECT
-                DATE(created_at) as date,
+                DATE("createdAt") as date,
                 COUNT(*) as bookings,
                 SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed
             FROM bookings
-            WHERE created_at IS NOT NULL
-            GROUP BY DATE(created_at)
+            WHERE "createdAt" IS NOT NULL
+            GROUP BY DATE("createdAt")
             ORDER BY date DESC
             LIMIT 30
         """)
