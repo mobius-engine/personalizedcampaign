@@ -1761,12 +1761,11 @@ def scheduler_todays_bookings():
         cursor.execute("""
             SELECT
                 bookings.id,
-                "scheduledAt" as scheduled_at,
+                "startTime" as scheduled_at,
                 "createdAt" as created_at,
                 bookings.status,
                 prospects.name,
-                prospects.email,
-                "linkedinUrl" as linkedin_url
+                prospects.email
             FROM bookings
             JOIN prospects ON "prospectId" = prospects.id
             WHERE DATE("createdAt") = CURRENT_DATE
@@ -1786,8 +1785,7 @@ def scheduler_todays_bookings():
                 'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                 'status': row['status'],
                 'name': row['name'],
-                'email': row['email'],
-                'linkedin_url': row['linkedin_url']
+                'email': row['email']
             })
 
         return jsonify(data)
@@ -1804,23 +1802,22 @@ def scheduler_upcoming_calls():
 
         cursor.execute("""
             SELECT
-                DATE("scheduledAt") as date,
+                DATE("startTime") as date,
                 COUNT(*) as count,
                 json_agg(
                     json_build_object(
                         'id', bookings.id,
-                        'time', "scheduledAt",
+                        'time', "startTime",
                         'status', bookings.status,
                         'name', prospects.name,
-                        'email', prospects.email,
-                        'linkedinUrl', "linkedinUrl"
-                    ) ORDER BY "scheduledAt"
+                        'email', prospects.email
+                    ) ORDER BY "startTime"
                 ) as bookings
             FROM bookings
             JOIN prospects ON "prospectId" = prospects.id
-            WHERE "scheduledAt" >= CURRENT_DATE
+            WHERE "startTime" >= CURRENT_DATE
                 AND bookings.status != 'cancelled'
-            GROUP BY DATE("scheduledAt")
+            GROUP BY DATE("startTime")
             ORDER BY date ASC
             LIMIT 60
         """)

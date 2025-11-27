@@ -1015,14 +1015,6 @@
                                     <div style="color: var(--nyt-gray); font-size: 14px; margin-bottom: 3px;">
                                         <strong>Scheduled for:</strong> ${scheduledDate}
                                     </div>
-                                    ${booking.linkedin_url ? `
-                                        <div style="margin-top: 8px;">
-                                            <a href="${booking.linkedin_url}" target="_blank"
-                                               style="color: var(--nyt-blue); text-decoration: none; font-size: 14px;">
-                                                View LinkedIn Profile →
-                                            </a>
-                                        </div>
-                                    ` : ''}
                                 </div>
                                 <div style="background: var(--nyt-green); color: white; padding: 4px 12px; border-radius: 3px; font-size: 12px; font-weight: 600;">
                                     ${booking.status.toUpperCase()}
@@ -1144,14 +1136,6 @@
                                 <div style="color: var(--nyt-gray); font-size: 13px; margin-bottom: 2px;">
                                     <strong>Email:</strong> ${booking.email}
                                 </div>
-                                ${booking.linkedinUrl ? `
-                                    <div style="margin-top: 6px;">
-                                        <a href="${booking.linkedinUrl}" target="_blank"
-                                           style="color: var(--nyt-blue); text-decoration: none; font-size: 13px;">
-                                            View LinkedIn Profile →
-                                        </a>
-                                    </div>
-                                ` : ''}
                             </div>
                         </div>
                     </div>
