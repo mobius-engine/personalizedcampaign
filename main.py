@@ -1737,17 +1737,29 @@ def scheduler_debug_columns():
         cursor.execute("SELECT * FROM bookings LIMIT 1")
         bookings_row = cursor.fetchone()
 
-        cursor.execute("SELECT * FROM prospects LIMIT 1")
+        cursor.execute("SELECT id, email, name, company, phone, qualified, qualificationResponses FROM prospects LIMIT 1")
         prospects_row = cursor.fetchone()
 
         cursor.close()
         conn.close()
 
-        return jsonify({
+        result = {
             'bookings_columns': list(bookings_row.keys()) if bookings_row else [],
-            'prospects_columns': list(prospects_row.keys()) if prospects_row else [],
-            'sample_prospect': dict(prospects_row) if prospects_row else {}
-        })
+            'prospects_columns': list(prospects_row.keys()) if prospects_row else []
+        }
+
+        if prospects_row:
+            result['sample_prospect'] = {
+                'id': prospects_row['id'],
+                'email': prospects_row['email'],
+                'name': prospects_row['name'],
+                'company': prospects_row['company'],
+                'phone': prospects_row['phone'],
+                'qualified': prospects_row['qualified'],
+                'qualificationResponses': str(prospects_row['qualificationResponses']) if prospects_row['qualificationResponses'] else None
+            }
+
+        return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
