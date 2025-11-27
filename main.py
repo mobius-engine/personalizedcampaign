@@ -1737,16 +1737,16 @@ def scheduler_todays_bookings():
         cursor.execute("""
             SELECT
                 bookings.id,
-                bookings."scheduledAt" as scheduled_at,
-                bookings."createdAt" as created_at,
+                "scheduledAt" as scheduled_at,
+                "createdAt" as created_at,
                 bookings.status,
                 prospects.name,
                 prospects.email,
-                prospects."linkedinUrl" as linkedin_url
+                "linkedinUrl" as linkedin_url
             FROM bookings
-            JOIN prospects ON bookings."prospectId" = prospects.id
-            WHERE DATE(bookings."createdAt") = CURRENT_DATE
-            ORDER BY bookings."createdAt" DESC
+            JOIN prospects ON "prospectId" = prospects.id
+            WHERE DATE("createdAt") = CURRENT_DATE
+            ORDER BY "createdAt" DESC
         """)
 
         results = cursor.fetchall()
@@ -1780,23 +1780,23 @@ def scheduler_upcoming_calls():
 
         cursor.execute("""
             SELECT
-                DATE(bookings."scheduledAt") as date,
+                DATE("scheduledAt") as date,
                 COUNT(*) as count,
                 json_agg(
                     json_build_object(
                         'id', bookings.id,
-                        'time', bookings."scheduledAt",
+                        'time', "scheduledAt",
                         'status', bookings.status,
                         'name', prospects.name,
                         'email', prospects.email,
-                        'linkedinUrl', prospects."linkedinUrl"
-                    ) ORDER BY bookings."scheduledAt"
+                        'linkedinUrl', "linkedinUrl"
+                    ) ORDER BY "scheduledAt"
                 ) as bookings
             FROM bookings
-            JOIN prospects ON bookings."prospectId" = prospects.id
-            WHERE bookings."scheduledAt" >= CURRENT_DATE
+            JOIN prospects ON "prospectId" = prospects.id
+            WHERE "scheduledAt" >= CURRENT_DATE
                 AND bookings.status != 'cancelled'
-            GROUP BY DATE(bookings."scheduledAt")
+            GROUP BY DATE("scheduledAt")
             ORDER BY date ASC
             LIMIT 60
         """)
