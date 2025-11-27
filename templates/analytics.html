@@ -1004,6 +1004,12 @@
                         minute: '2-digit'
                     });
 
+                    const linkedinLink = booking.linkedin_url
+                        ? `<div style="color: var(--nyt-gray); font-size: 14px; margin-bottom: 3px;">
+                               <strong>LinkedIn:</strong> <a href="${booking.linkedin_url}" target="_blank" style="color: var(--nyt-blue);">View Profile</a>
+                           </div>`
+                        : '';
+
                     html += `
                         <div style="border: 1px solid var(--nyt-light-gray); padding: 15px; border-radius: 4px; background: white;">
                             <div style="display: flex; justify-content: space-between; align-items: start;">
@@ -1015,6 +1021,7 @@
                                     <div style="color: var(--nyt-gray); font-size: 14px; margin-bottom: 3px;">
                                         <strong>Scheduled for:</strong> ${scheduledDate}
                                     </div>
+                                    ${linkedinLink}
                                 </div>
                                 <div style="background: var(--nyt-green); color: white; padding: 4px 12px; border-radius: 3px; font-size: 12px; font-weight: 600;">
                                     ${booking.status.toUpperCase()}
@@ -1125,6 +1132,12 @@
                     minute: '2-digit'
                 });
 
+                const linkedinLink = booking.linkedin_url
+                    ? `<div style="color: var(--nyt-gray); font-size: 13px; margin-bottom: 2px;">
+                           <strong>LinkedIn:</strong> <a href="${booking.linkedin_url}" target="_blank" style="color: var(--nyt-blue);">View Profile</a>
+                       </div>`
+                    : '';
+
                 html += `
                     <div style="border: 1px solid var(--nyt-light-gray); padding: 12px; border-radius: 4px; background: white;">
                         <div style="display: flex; justify-content: space-between; align-items: start;">
@@ -1136,6 +1149,7 @@
                                 <div style="color: var(--nyt-gray); font-size: 13px; margin-bottom: 2px;">
                                     <strong>Email:</strong> ${booking.email}
                                 </div>
+                                ${linkedinLink}
                             </div>
                         </div>
                     </div>

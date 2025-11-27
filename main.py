@@ -1778,7 +1778,8 @@ def scheduler_todays_bookings():
                 bookings."createdAt" as created_at,
                 bookings.status,
                 prospects.name,
-                prospects.email
+                prospects.email,
+                prospects."qualificationResponses"
             FROM bookings
             JOIN prospects ON bookings."prospectId" = prospects.id
             WHERE DATE(bookings."createdAt") = CURRENT_DATE
@@ -1789,16 +1790,27 @@ def scheduler_todays_bookings():
         cursor.close()
         conn.close()
 
-        # Convert datetime objects to strings
+        # Convert datetime objects to strings and extract LinkedIn URL
         data = []
         for row in results:
+            linkedin_url = None
+            if row['qualificationResponses']:
+                # Parse the qualificationResponses to extract linkedinProfile
+                import ast
+                try:
+                    responses = ast.literal_eval(str(row['qualificationResponses']))
+                    linkedin_url = responses.get('linkedinProfile')
+                except:
+                    pass
+
             data.append({
                 'id': row['id'],
                 'scheduled_at': row['scheduled_at'].isoformat() if row['scheduled_at'] else None,
                 'created_at': row['created_at'].isoformat() if row['created_at'] else None,
                 'status': row['status'],
                 'name': row['name'],
-                'email': row['email']
+                'email': row['email'],
+                'linkedin_url': linkedin_url
             })
 
         return jsonify(data)
@@ -1823,7 +1835,8 @@ def scheduler_upcoming_calls():
                         'time', bookings."startTime",
                         'status', bookings.status,
                         'name', prospects.name,
-                        'email', prospects.email
+                        'email', prospects.email,
+                        'qualificationResponses', prospects."qualificationResponses"
                     ) ORDER BY bookings."startTime"
                 ) as bookings
             FROM bookings
@@ -1839,13 +1852,28 @@ def scheduler_upcoming_calls():
         cursor.close()
         conn.close()
 
-        # Convert date objects to strings
+        # Convert date objects to strings and extract LinkedIn URLs
+        import ast
         data = []
         for row in results:
+            bookings_list = row['bookings']
+            # Extract LinkedIn URL from qualificationResponses for each booking
+            for booking in bookings_list:
+                linkedin_url = None
+                if booking.get('qualificationResponses'):
+                    try:
+                        responses = ast.literal_eval(str(booking['qualificationResponses']))
+                        linkedin_url = responses.get('linkedinProfile')
+                    except:
+                        pass
+                booking['linkedin_url'] = linkedin_url
+                # Remove qualificationResponses from response
+                booking.pop('qualificationResponses', None)
+
             data.append({
                 'date': row['date'].isoformat() if row['date'] else None,
                 'count': row['count'],
-                'bookings': row['bookings']
+                'bookings': bookings_list
             })
 
         return jsonify(data)
