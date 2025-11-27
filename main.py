@@ -1727,6 +1727,25 @@ def scheduler_prospects_qualification():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/scheduler/debug-columns')
+def scheduler_debug_columns():
+    """Debug endpoint to see actual column names."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("SELECT * FROM bookings LIMIT 1")
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+
+        if row:
+            return jsonify({'columns': list(row.keys()), 'sample_data': dict(row)})
+        return jsonify({'columns': [], 'sample_data': {}})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/scheduler/todays-bookings')
 def scheduler_todays_bookings():
     """Get bookings created today with prospect details."""
