@@ -1735,13 +1735,18 @@ def scheduler_debug_columns():
         cursor = conn.cursor(cursor_factory=RealDictCursor)
 
         cursor.execute("SELECT * FROM bookings LIMIT 1")
-        row = cursor.fetchone()
+        bookings_row = cursor.fetchone()
+
+        cursor.execute("SELECT * FROM prospects LIMIT 1")
+        prospects_row = cursor.fetchone()
+
         cursor.close()
         conn.close()
 
-        if row:
-            return jsonify({'columns': list(row.keys()), 'sample_data': dict(row)})
-        return jsonify({'columns': [], 'sample_data': {}})
+        return jsonify({
+            'bookings_columns': list(bookings_row.keys()) if bookings_row else [],
+            'prospects_columns': list(prospects_row.keys()) if prospects_row else []
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
