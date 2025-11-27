@@ -1891,6 +1891,72 @@ def api_hook_generation_logs():
     })
 
 
+@app.route('/api/download-scheduler-leads-csv')
+def download_scheduler_leads_csv():
+    """Download all scheduler prospects as CSV with email in first column."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                email,
+                name,
+                company,
+                phone,
+                qualified,
+                "qualificationScore",
+                "qualificationResponses",
+                "createdAt"
+            FROM prospects
+            ORDER BY "createdAt" DESC
+        """)
+
+        prospects = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Create CSV in memory
+        output = StringIO()
+        if prospects:
+            # Extract LinkedIn URL from qualificationResponses
+            import ast
+            rows = []
+            for prospect in prospects:
+                linkedin_url = None
+                if prospect['qualificationResponses']:
+                    try:
+                        responses = ast.literal_eval(str(prospect['qualificationResponses']))
+                        linkedin_url = responses.get('linkedinProfile', '')
+                    except:
+                        pass
+
+                rows.append({
+                    'email': prospect['email'],
+                    'name': prospect['name'],
+                    'company': prospect['company'],
+                    'phone': prospect['phone'],
+                    'linkedin_url': linkedin_url or '',
+                    'qualified': prospect['qualified'],
+                    'qualification_score': prospect['qualificationScore'],
+                    'created_at': prospect['createdAt'].isoformat() if prospect['createdAt'] else ''
+                })
+
+            fieldnames = ['email', 'name', 'company', 'phone', 'linkedin_url', 'qualified', 'qualification_score', 'created_at']
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+
+        csv_data = output.getvalue()
+        response = make_response(csv_data)
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=scheduler_leads_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/download-leads-csv')
 def download_leads_csv():
     """Download all leads as CSV with email in first column."""
