@@ -41,13 +41,26 @@ else:
 
 # Scheduler database configuration (via Cloud SQL Proxy)
 # This database contains prospects, bookings, availability_rules, settings, and blocked_dates
-SCHEDULER_DB_CONFIG = {
-    'host': os.getenv('SCHEDULER_DB_HOST', 'localhost'),  # localhost when using cloud-sql-proxy
-    'port': os.getenv('SCHEDULER_DB_PORT', '5432'),
-    'database': os.getenv('SCHEDULER_DB_NAME', 'scheduler'),
-    'user': os.getenv('SCHEDULER_DB_USER', 'scheduler-user'),
-    'password': os.getenv('SCHEDULER_DB_PASSWORD', 'scheduler-password-123'),
-}
+SCHEDULER_DB_HOST = os.getenv('SCHEDULER_DB_HOST', 'localhost')
+
+# Check if we're using Unix socket (Cloud Run) or TCP (local)
+if SCHEDULER_DB_HOST.startswith('/cloudsql/'):
+    # Cloud Run - use Unix socket
+    SCHEDULER_DB_CONFIG = {
+        'host': SCHEDULER_DB_HOST,
+        'database': os.getenv('SCHEDULER_DB_NAME', 'scheduler'),
+        'user': os.getenv('SCHEDULER_DB_USER', 'scheduler-user'),
+        'password': os.getenv('SCHEDULER_DB_PASSWORD', 'scheduler-password-123'),
+    }
+else:
+    # Local - use TCP connection
+    SCHEDULER_DB_CONFIG = {
+        'host': SCHEDULER_DB_HOST,
+        'port': os.getenv('SCHEDULER_DB_PORT', '5432'),
+        'database': os.getenv('SCHEDULER_DB_NAME', 'scheduler'),
+        'user': os.getenv('SCHEDULER_DB_USER', 'scheduler-user'),
+        'password': os.getenv('SCHEDULER_DB_PASSWORD', 'scheduler-password-123'),
+    }
 
 ALLOWED_EXTENSIONS = {'csv'}
 GCP_PROJECT_ID = "jobs-data-linkedin"
