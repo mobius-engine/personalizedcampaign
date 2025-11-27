@@ -1859,18 +1859,20 @@ def download_leads_csv():
 
         cursor.execute("""
             SELECT
-                email,
+                email_address,
                 first_name,
                 last_name,
-                company,
-                title,
+                current_company,
+                current_title,
                 location,
-                connection_degree,
-                contacted,
-                ai_hook,
-                ai_analysis,
-                ai_score,
-                ai_reasoning
+                headline,
+                profile_url,
+                phone_number,
+                hook,
+                viewed,
+                active_project,
+                notes,
+                feedback
             FROM leads
             ORDER BY id
         """)
