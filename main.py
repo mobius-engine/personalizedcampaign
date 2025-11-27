@@ -39,6 +39,16 @@ else:
         'password': os.getenv('DB_PASSWORD', ''),
     }
 
+# Scheduler database configuration (via Cloud SQL Proxy)
+# This database contains prospects, bookings, availability_rules, settings, and blocked_dates
+SCHEDULER_DB_CONFIG = {
+    'host': os.getenv('SCHEDULER_DB_HOST', 'localhost'),  # localhost when using cloud-sql-proxy
+    'port': os.getenv('SCHEDULER_DB_PORT', '5432'),
+    'database': os.getenv('SCHEDULER_DB_NAME', 'scheduler'),
+    'user': os.getenv('SCHEDULER_DB_USER', 'scheduler-user'),
+    'password': os.getenv('SCHEDULER_DB_PASSWORD', 'scheduler-password-123'),
+}
+
 ALLOWED_EXTENSIONS = {'csv'}
 GCP_PROJECT_ID = "jobs-data-linkedin"
 SECRET_NAME = "openai-api-key"
@@ -68,6 +78,11 @@ def allowed_file(filename):
 def get_db_connection():
     """Create database connection."""
     return psycopg2.connect(**DB_CONFIG)
+
+
+def get_scheduler_db_connection():
+    """Create scheduler database connection (via Cloud SQL Proxy)."""
+    return psycopg2.connect(**SCHEDULER_DB_CONFIG)
 
 
 def init_task_status_table():
@@ -1551,6 +1566,143 @@ def analytics_contact_status():
                 COUNT(*) as count
             FROM leads
             GROUP BY viewed
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify([dict(row) for row in results])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/summary')
+def scheduler_summary():
+    """Get summary statistics from scheduler database."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        # Total prospects
+        cursor.execute("SELECT COUNT(*) as total FROM prospects")
+        total_prospects = cursor.fetchone()['total']
+
+        # Qualified prospects
+        cursor.execute("SELECT COUNT(*) as qualified FROM prospects WHERE is_qualified = TRUE")
+        qualified_prospects = cursor.fetchone()['qualified']
+
+        # Total bookings
+        cursor.execute("SELECT COUNT(*) as total FROM bookings")
+        total_bookings = cursor.fetchone()['total']
+
+        # Confirmed bookings
+        cursor.execute("SELECT COUNT(*) as confirmed FROM bookings WHERE status = 'confirmed'")
+        confirmed_bookings = cursor.fetchone()['confirmed']
+
+        # Pending bookings
+        cursor.execute("SELECT COUNT(*) as pending FROM bookings WHERE status = 'pending'")
+        pending_bookings = cursor.fetchone()['pending']
+
+        # Cancelled bookings
+        cursor.execute("SELECT COUNT(*) as cancelled FROM bookings WHERE status = 'cancelled'")
+        cancelled_bookings = cursor.fetchone()['cancelled']
+
+        cursor.close()
+        conn.close()
+
+        return jsonify({
+            'total_prospects': total_prospects,
+            'qualified_prospects': qualified_prospects,
+            'unqualified_prospects': total_prospects - qualified_prospects,
+            'qualification_rate': round((qualified_prospects / total_prospects * 100) if total_prospects > 0 else 0, 1),
+            'total_bookings': total_bookings,
+            'confirmed_bookings': confirmed_bookings,
+            'pending_bookings': pending_bookings,
+            'cancelled_bookings': cancelled_bookings,
+            'booking_rate': round((total_bookings / qualified_prospects * 100) if qualified_prospects > 0 else 0, 1)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/bookings-timeline')
+def scheduler_bookings_timeline():
+    """Get bookings over time from scheduler database."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                DATE(created_at) as date,
+                COUNT(*) as bookings,
+                SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) as confirmed
+            FROM bookings
+            WHERE created_at IS NOT NULL
+            GROUP BY DATE(created_at)
+            ORDER BY date DESC
+            LIMIT 30
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Convert date objects to strings
+        data = []
+        for row in results:
+            data.append({
+                'date': row['date'].isoformat() if row['date'] else None,
+                'bookings': row['bookings'],
+                'confirmed': row['confirmed']
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/bookings-by-status')
+def scheduler_bookings_by_status():
+    """Get booking status breakdown for pie chart."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                status,
+                COUNT(*) as count
+            FROM bookings
+            GROUP BY status
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        return jsonify([dict(row) for row in results])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/prospects-qualification')
+def scheduler_prospects_qualification():
+    """Get prospect qualification breakdown."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                CASE
+                    WHEN is_qualified = TRUE THEN 'Qualified'
+                    ELSE 'Not Qualified'
+                END as status,
+                COUNT(*) as count
+            FROM prospects
+            GROUP BY is_qualified
         """)
 
         results = cursor.fetchall()
