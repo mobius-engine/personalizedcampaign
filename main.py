@@ -8,7 +8,7 @@ import os
 import csv
 from io import StringIO, BytesIO
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, redirect, url_for, flash
+from flask import Flask, render_template, request, jsonify, redirect, url_for, flash, make_response
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from werkzeug.utils import secure_filename
@@ -1727,6 +1727,98 @@ def scheduler_prospects_qualification():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/scheduler/todays-bookings')
+def scheduler_todays_bookings():
+    """Get bookings created today with prospect details."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                b.id,
+                b."scheduledAt",
+                b."createdAt",
+                b.status,
+                p.name,
+                p.email,
+                p."linkedinUrl"
+            FROM bookings b
+            JOIN prospects p ON b."prospectId" = p.id
+            WHERE DATE(b."createdAt") = CURRENT_DATE
+            ORDER BY b."createdAt" DESC
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Convert datetime objects to strings
+        data = []
+        for row in results:
+            data.append({
+                'id': row['id'],
+                'scheduled_at': row['scheduledAt'].isoformat() if row['scheduledAt'] else None,
+                'created_at': row['createdAt'].isoformat() if row['createdAt'] else None,
+                'status': row['status'],
+                'name': row['name'],
+                'email': row['email'],
+                'linkedin_url': row['linkedinUrl']
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/scheduler/upcoming-calls')
+def scheduler_upcoming_calls():
+    """Get upcoming calls grouped by scheduled date."""
+    try:
+        conn = get_scheduler_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                DATE(b."scheduledAt") as date,
+                COUNT(*) as count,
+                json_agg(
+                    json_build_object(
+                        'id', b.id,
+                        'time', b."scheduledAt",
+                        'status', b.status,
+                        'name', p.name,
+                        'email', p.email,
+                        'linkedinUrl', p."linkedinUrl"
+                    ) ORDER BY b."scheduledAt"
+                ) as bookings
+            FROM bookings b
+            JOIN prospects p ON b."prospectId" = p.id
+            WHERE b."scheduledAt" >= CURRENT_DATE
+                AND b.status != 'cancelled'
+            GROUP BY DATE(b."scheduledAt")
+            ORDER BY date ASC
+            LIMIT 60
+        """)
+
+        results = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Convert date objects to strings
+        data = []
+        for row in results:
+            data.append({
+                'date': row['date'].isoformat() if row['date'] else None,
+                'count': row['count'],
+                'bookings': row['bookings']
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/api/hook-generation-logs')
 def api_hook_generation_logs():
     """Get recent hook generation logs."""
@@ -1735,6 +1827,55 @@ def api_hook_generation_logs():
         'logs': hook_generation_logs[-limit:],
         'total': len(hook_generation_logs)
     })
+
+
+@app.route('/api/download-leads-csv')
+def download_leads_csv():
+    """Download all leads as CSV with email in first column."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+
+        cursor.execute("""
+            SELECT
+                email,
+                first_name,
+                last_name,
+                company,
+                title,
+                location,
+                connection_degree,
+                contacted,
+                ai_hook,
+                ai_analysis,
+                ai_score,
+                ai_reasoning
+            FROM leads
+            ORDER BY id
+        """)
+
+        leads = cursor.fetchall()
+        cursor.close()
+        conn.close()
+
+        # Create CSV in memory
+        output = StringIO()
+        if leads:
+            # Get column names from first row
+            fieldnames = list(leads[0].keys())
+            writer = csv.DictWriter(output, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(leads)
+
+        # Create response
+        csv_data = output.getvalue()
+        response = make_response(csv_data)
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = f'attachment; filename=leads_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+
+        return response
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 if __name__ == '__main__':

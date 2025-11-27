@@ -195,6 +195,11 @@
         <a href="/leads">Leads</a>
         <a href="/upload">Upload</a>
         <a href="/history">History</a>
+        <a href="/api/download-leads-csv"
+           style="float: right; background: var(--nyt-blue); color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none;"
+           download>
+            📥 Download All Leads CSV
+        </a>
     </div>
 
     <div class="container">
@@ -249,6 +254,32 @@
             <div class="loading">Loading scheduler data...</div>
         </div>
 
+        <!-- Bookings Timeline - MOVED TO TOP -->
+        <div class="chart-container">
+            <div class="chart-title">Booking Activity Timeline</div>
+            <div class="chart-subtitle">Daily booking activity over the last 30 days</div>
+            <div class="chart" id="bookings-timeline-chart"></div>
+        </div>
+
+        <!-- Today's Bookings List -->
+        <div class="chart-container">
+            <div class="chart-title">Today's Bookings</div>
+            <div class="chart-subtitle">People who booked meetings today</div>
+            <div id="todays-bookings-list" style="padding: 20px;">
+                <div class="loading">Loading today's bookings...</div>
+            </div>
+        </div>
+
+        <!-- Upcoming Calls Calendar -->
+        <div class="chart-container">
+            <div class="chart-title">Upcoming Calls Calendar</div>
+            <div class="chart-subtitle">Future bookings by scheduled date (click to see details)</div>
+            <div class="chart" id="upcoming-calls-chart"></div>
+            <div id="upcoming-calls-details" style="padding: 20px; display: none;">
+                <!-- Details will be shown here when clicking on a date -->
+            </div>
+        </div>
+
         <!-- Prospect Qualification Pie Chart -->
         <div class="chart-container">
             <div class="chart-title">Prospect Qualification Status</div>
@@ -261,13 +292,6 @@
             <div class="chart-title">Booking Status Distribution</div>
             <div class="chart-subtitle">Breakdown of booking statuses</div>
             <div class="chart" id="booking-status-chart"></div>
-        </div>
-
-        <!-- Bookings Timeline -->
-        <div class="chart-container">
-            <div class="chart-title">Booking Activity Timeline</div>
-            <div class="chart-subtitle">Daily booking activity over the last 30 days</div>
-            <div class="chart" id="bookings-timeline-chart"></div>
         </div>
     </div>
 
@@ -956,6 +980,190 @@
             }
         }
 
+        // Load today's bookings
+        async function loadTodaysBookings() {
+            try {
+                const response = await fetch('/api/scheduler/todays-bookings');
+                const data = await response.json();
+
+                const container = document.getElementById('todays-bookings-list');
+
+                if (data.length === 0) {
+                    container.innerHTML = '<p style="color: var(--nyt-gray); text-align: center;">No bookings created today</p>';
+                    return;
+                }
+
+                let html = '<div style="display: grid; gap: 15px;">';
+                data.forEach(booking => {
+                    const scheduledDate = new Date(booking.scheduled_at).toLocaleString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+
+                    html += `
+                        <div style="border: 1px solid var(--nyt-light-gray); padding: 15px; border-radius: 4px; background: white;">
+                            <div style="display: flex; justify-content: space-between; align-items: start;">
+                                <div>
+                                    <div style="font-weight: 600; font-size: 16px; margin-bottom: 5px;">${booking.name}</div>
+                                    <div style="color: var(--nyt-gray); font-size: 14px; margin-bottom: 3px;">
+                                        <strong>Email:</strong> ${booking.email}
+                                    </div>
+                                    <div style="color: var(--nyt-gray); font-size: 14px; margin-bottom: 3px;">
+                                        <strong>Scheduled for:</strong> ${scheduledDate}
+                                    </div>
+                                    ${booking.linkedin_url ? `
+                                        <div style="margin-top: 8px;">
+                                            <a href="${booking.linkedin_url}" target="_blank"
+                                               style="color: var(--nyt-blue); text-decoration: none; font-size: 14px;">
+                                                View LinkedIn Profile →
+                                            </a>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                <div style="background: var(--nyt-green); color: white; padding: 4px 12px; border-radius: 3px; font-size: 12px; font-weight: 600;">
+                                    ${booking.status.toUpperCase()}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                html += '</div>';
+
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading today\'s bookings:', error);
+                document.getElementById('todays-bookings-list').innerHTML =
+                    '<p style="color: red;">Error loading bookings</p>';
+            }
+        }
+
+        // Create upcoming calls chart
+        async function createUpcomingCallsChart() {
+            try {
+                const response = await fetch('/api/scheduler/upcoming-calls');
+                const data = await response.json();
+
+                if (!data || data.length === 0) {
+                    document.getElementById('upcoming-calls-chart').innerHTML =
+                        '<p style="text-align: center; color: var(--nyt-gray); padding: 40px;">No upcoming calls scheduled</p>';
+                    return;
+                }
+
+                const container = document.getElementById('upcoming-calls-chart');
+                const margin = {top: 20, right: 30, bottom: 60, left: 60};
+                const width = container.clientWidth - margin.left - margin.right;
+                const height = 400 - margin.top - margin.bottom;
+
+                // Clear existing content
+                container.innerHTML = '';
+
+                const svg = d3.select('#upcoming-calls-chart')
+                    .append('svg')
+                    .attr('width', width + margin.left + margin.right)
+                    .attr('height', height + margin.top + margin.bottom)
+                    .append('g')
+                    .attr('transform', `translate(${margin.left},${margin.top})`);
+
+                // Create scales
+                const x = d3.scaleBand()
+                    .domain(data.map(d => d.date))
+                    .range([0, width])
+                    .padding(0.2);
+
+                const y = d3.scaleLinear()
+                    .domain([0, d3.max(data, d => d.count)])
+                    .nice()
+                    .range([height, 0]);
+
+                // Add bars with click handlers
+                svg.selectAll('.bar')
+                    .data(data)
+                    .enter()
+                    .append('rect')
+                    .attr('class', 'bar-contacted')
+                    .attr('x', d => x(d.date))
+                    .attr('y', d => y(d.count))
+                    .attr('width', x.bandwidth())
+                    .attr('height', d => height - y(d.count))
+                    .style('cursor', 'pointer')
+                    .on('click', function(event, d) {
+                        showUpcomingCallsDetails(d);
+                    })
+                    .append('title')
+                    .text(d => `${d.date}: ${d.count} calls`);
+
+                // Add X axis
+                svg.append('g')
+                    .attr('class', 'axis')
+                    .attr('transform', `translate(0,${height})`)
+                    .call(d3.axisBottom(x))
+                    .selectAll('text')
+                    .attr('transform', 'rotate(-45)')
+                    .style('text-anchor', 'end');
+
+                // Add Y axis
+                svg.append('g')
+                    .attr('class', 'axis')
+                    .call(d3.axisLeft(y));
+
+            } catch (error) {
+                console.error('Error creating upcoming calls chart:', error);
+            }
+        }
+
+        // Show details for a specific date's bookings
+        function showUpcomingCallsDetails(dateData) {
+            const detailsContainer = document.getElementById('upcoming-calls-details');
+
+            let html = `
+                <div style="border-top: 2px solid var(--nyt-light-gray); padding-top: 20px; margin-top: 20px;">
+                    <h3 style="font-size: 18px; margin-bottom: 15px; color: var(--nyt-dark-gray);">
+                        Calls scheduled for ${new Date(dateData.date).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                    </h3>
+                    <div style="display: grid; gap: 12px;">
+            `;
+
+            dateData.bookings.forEach(booking => {
+                const time = new Date(booking.time).toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+
+                html += `
+                    <div style="border: 1px solid var(--nyt-light-gray); padding: 12px; border-radius: 4px; background: white;">
+                        <div style="display: flex; justify-content: space-between; align-items: start;">
+                            <div style="flex: 1;">
+                                <div style="font-weight: 600; font-size: 15px; margin-bottom: 4px;">${booking.name}</div>
+                                <div style="color: var(--nyt-gray); font-size: 13px; margin-bottom: 2px;">
+                                    <strong>Time:</strong> ${time}
+                                </div>
+                                <div style="color: var(--nyt-gray); font-size: 13px; margin-bottom: 2px;">
+                                    <strong>Email:</strong> ${booking.email}
+                                </div>
+                                ${booking.linkedinUrl ? `
+                                    <div style="margin-top: 6px;">
+                                        <a href="${booking.linkedinUrl}" target="_blank"
+                                           style="color: var(--nyt-blue); text-decoration: none; font-size: 13px;">
+                                            View LinkedIn Profile →
+                                        </a>
+                                    </div>
+                                ` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div></div>';
+
+            detailsContainer.innerHTML = html;
+            detailsContainer.style.display = 'block';
+        }
+
         // Load all data on page load
         document.addEventListener('DOMContentLoaded', () => {
             loadSummary();
@@ -967,9 +1175,11 @@
 
             // Load scheduler data
             loadSchedulerSummary();
+            createBookingsTimelineChart();
+            loadTodaysBookings();
+            createUpcomingCallsChart();
             createProspectQualificationChart();
             createBookingStatusChart();
-            createBookingsTimelineChart();
         });
     </script>
 </body>
