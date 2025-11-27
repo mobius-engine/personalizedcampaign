@@ -1737,7 +1737,7 @@ def scheduler_debug_columns():
         cursor.execute("SELECT * FROM bookings LIMIT 1")
         bookings_row = cursor.fetchone()
 
-        cursor.execute("SELECT id, email, name, company, phone, qualified, qualificationResponses FROM prospects LIMIT 1")
+        cursor.execute('SELECT id, email, name, company, phone, qualified, "qualificationResponses" FROM prospects LIMIT 1')
         prospects_row = cursor.fetchone()
 
         cursor.close()
